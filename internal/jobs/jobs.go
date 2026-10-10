@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/httpdl"
 	"github.com/sadatdaniel/download_me_not/internal/store"
@@ -37,6 +39,7 @@ type Options struct {
 	MetadataTimeout time.Duration                 // default 5 min
 	Tick            time.Duration                 // reconcile interval, default 2 s
 	Allowed         func(kind string) bool        // provider toggles; nil = all allowed
+	Limiter         *rate.Limiter                 // global download limit for web jobs
 }
 
 var (
@@ -411,6 +414,7 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 	part := filepath.Join(m.o.Downloads, path+".part")
 	d := httpdl.New(*meta.HTTP, part, httpdl.Options{
 		Client: m.o.Client, Header: hdr, Connections: conns,
+		Limiter: m.o.Limiter,
 		OnSave: func(st httpdl.State) {
 			meta.HTTP = &st
 			var done int64

@@ -32,6 +32,10 @@ type Config struct {
 		Tokens  []Token `koanf:"tokens"`
 		Signkey string  `koanf:"signkey"` // HMAC key for signed stream URLs
 	} `koanf:"auth"`
+	Limits struct {
+		Down int64 `koanf:"down"` // bytes/s, 0 = unlimited
+		Up   int64 `koanf:"up"`
+	} `koanf:"limits"`
 	Providers map[string]Provider `koanf:"providers"`
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
+	"github.com/sadatdaniel/download_me_not/internal/limits"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 )
@@ -38,7 +39,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	cfgPath := filepath.Join(dir, "config.yaml")
 	reg := provider.NewRegistry(nil, dir)
 	jm := jobs.New(jobs.Options{DB: db, Downloads: dl, Client: http.DefaultClient, Allowed: reg.Enabled})
-	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm})
+	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm, Limits: limits.New(0, 0)})
 	srv := httptest.NewServer(h)
 	t.Cleanup(func() { srv.Close(); db.Close(); f.Close() })
 	return srv, cfgPath
@@ -91,6 +92,10 @@ func TestAuthAndScopes(t *testing.T) {
 		{"GET", "/v1/jobs/nope", "read-tok", "", 404},
 		{"GET", "/v1/jobs/nope/stream", "read-tok", "", 404},
 		{"GET", "/v1/raw/video.mp4", "", "", 401},
+		{"PUT", "/v1/limits", "read-tok", `{"down":1000,"up":0}`, 403},
+		{"PUT", "/v1/limits", "write-tok", `{"down":1000,"up":0}`, 204},
+		{"PUT", "/v1/limits", "write-tok", `{"down":-1,"up":0}`, 422},
+		{"GET", "/v1/limits", "read-tok", "", 200},
 		{"POST", "/v1/fs/copy", "write-tok", `{"from":"/video.mp4","to":"/copy.mp4"}`, 204},
 		{"GET", "/v1/zip/", "read-tok", "", 200},
 		{"GET", "/v1/zip/", "", "", 401},

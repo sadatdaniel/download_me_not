@@ -47,6 +47,12 @@ type def struct {
 	signin    func(settings map[string]any) bool // nil: no sign-in needed
 }
 
+// restart marks a setting that takes effect after a server restart.
+func restart(m map[string]any) map[string]any {
+	m["x-restart"] = true
+	return m
+}
+
 func obj(props map[string]any) map[string]any {
 	return map[string]any{"type": "object", "properties": props, "additionalProperties": false}
 }
@@ -58,7 +64,16 @@ var builtins = []def{
 		})}, defaultOn: true},
 	{Info: Info{Name: "torrent", Kind: Source, Description: "Magnet links and .torrent files",
 		Schema: obj(map[string]any{
-			"port": map[string]any{"type": "integer", "minimum": 1, "maximum": 65535, "default": 42069, "title": "Listening port"},
+			"port":       restart(map[string]any{"type": "integer", "minimum": 1, "maximum": 65535, "default": 42069, "title": "Listening port (TCP and UDP)"}),
+			"bind":       restart(map[string]any{"type": "string", "default": "", "title": "Bind to address or interface (e.g. wg0); empty = all"}),
+			"dht":        restart(map[string]any{"type": "boolean", "default": true, "title": "DHT (find peers without trackers)"}),
+			"pex":        restart(map[string]any{"type": "boolean", "default": true, "title": "Peer exchange"}),
+			"utp":        restart(map[string]any{"type": "boolean", "default": true, "title": "uTP"}),
+			"ipv6":       restart(map[string]any{"type": "boolean", "default": true, "title": "IPv6"}),
+			"encryption": restart(map[string]any{"type": "string", "enum": []string{"prefer", "require", "off"}, "default": "prefer", "title": "Protocol encryption"}),
+			"maxPeers":   restart(map[string]any{"type": "integer", "minimum": 1, "maximum": 500, "default": 50, "title": "Peers per torrent"}),
+			"anonymous":  restart(map[string]any{"type": "boolean", "default": false, "title": "Anonymous mode (no DHT or PEX, hides client name; does NOT hide your IP)"}),
+			"blocklist":  restart(map[string]any{"type": "string", "default": "", "title": "IP blocklist file (P2P format)"}),
 		})}, defaultOn: true},
 	{Info: Info{Name: "video", Kind: Source, Description: "YouTube and other video sites through yt-dlp", Tools: []string{"yt-dlp", "deno", "ffmpeg"},
 		Schema: obj(map[string]any{})}, defaultOn: true},

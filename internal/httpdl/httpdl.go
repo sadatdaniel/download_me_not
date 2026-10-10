@@ -21,6 +21,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // Segment covers [Start, End) of the file; Done bytes from Start are written. End < 0 = until EOF.
@@ -42,12 +44,13 @@ type State struct {
 }
 
 type Options struct {
-	Client      *http.Client // the job layer passes netguard.Client(); tests use a loopback client
-	Header      http.Header  // cookies, referer, user agent from the browser or app
-	Connections int          // 1 = sequential (stream mode)
-	MinSplit    int64        // smallest piece worth stealing; default 1 MiB
-	Retries     int          // consecutive failures without progress per connection; default 8
-	OnSave      func(State)  // called every SaveEvery and when Run returns
+	Client      *http.Client  // the job layer passes netguard.Client(); tests use a loopback client
+	Header      http.Header   // cookies, referer, user agent from the browser or app
+	Connections int           // 1 = sequential (stream mode)
+	MinSplit    int64         // smallest piece worth stealing; default 1 MiB
+	Retries     int           // consecutive failures without progress per connection; default 8
+	OnSave      func(State)   // called every SaveEvery and when Run returns
+	Limiter     *rate.Limiter // global download limit shared with other jobs; nil = unlimited
 	SaveEvery   time.Duration
 }
 
@@ -437,6 +440,11 @@ func (d *Download) stream(ctx context.Context, f *os.File, s *seg, pos, end int6
 				n = int(s.End - pos) // the tail was handed to another connection
 			}
 			d.mu.Unlock()
+			if n > 0 && d.o.Limiter != nil {
+				if err := d.o.Limiter.WaitN(ctx, n); err != nil {
+					return progressed, err
+				}
+			}
 			if n > 0 {
 				if _, err := f.WriteAt(buf[:n], pos); err != nil {
 					return progressed, err

@@ -24,6 +24,7 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
+	"github.com/sadatdaniel/download_me_not/internal/limits"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
@@ -37,6 +38,7 @@ type Deps struct {
 	FS        *fsapi.FS
 	Providers *provider.Registry
 	Jobs      *jobs.Manager
+	Limits    *limits.Limits
 }
 
 var rank = map[string]int{"read": 1, "write": 2, "admin": 3}
@@ -255,6 +257,24 @@ func (s *server) routes(api huma.API) {
 				return nil, huma.Error400BadRequest(err.Error())
 			}
 			return nil, config.Set(s.CfgPath, "providers."+in.Name+".enabled", in.Body.Enabled)
+		})
+
+	type limitsBody struct {
+		Down int64 `json:"down" minimum:"0" doc:"bytes/s for all downloads together, 0 = unlimited"`
+		Up   int64 `json:"up" minimum:"0" doc:"bytes/s torrent upload, 0 = unlimited"`
+	}
+	huma.Register(api, op("get-limits", "GET", "/v1/limits", "read", "Global bandwidth limits"),
+		func(ctx context.Context, _ *struct{}) (*struct{ Body limitsBody }, error) {
+			d, u := s.Limits.Get()
+			return body(limitsBody{d, u}), nil
+		})
+	huma.Register(api, op("set-limits", "PUT", "/v1/limits", "write", "Change global bandwidth limits (applies immediately, saved to config)"),
+		func(ctx context.Context, in *struct{ Body limitsBody }) (*struct{}, error) {
+			s.Limits.Set(in.Body.Down, in.Body.Up)
+			if err := config.Set(s.CfgPath, "limits.down", in.Body.Down); err != nil {
+				return nil, err
+			}
+			return nil, config.Set(s.CfgPath, "limits.up", in.Body.Up)
 		})
 
 	huma.Register(api, op("doctor", "GET", "/v1/doctor", "read", "Helper tools present or missing"),

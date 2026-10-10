@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 func payload(n int) []byte {
@@ -269,5 +271,21 @@ func TestAvailableWhileStreaming(t *testing.T) {
 	}
 	if d.Available(0) != int64(len(data)) {
 		t.Fatal("not fully available")
+	}
+}
+
+func TestGlobalLimiter(t *testing.T) {
+	data := payload(1 << 20)
+	s := newServer(t, data, `"v1"`, nil)
+	st, _ := Probe(context.Background(), http.DefaultClient, s.URL, nil)
+	lim := rate.NewLimiter(rate.Limit(1<<20), 256<<10) // 1 MiB/s shared by all connections
+	start := time.Now()
+	d := New(st, filepath.Join(t.TempDir(), "f"), Options{Client: http.DefaultClient, Connections: 4, Limiter: lim})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// 1 MiB minus the 256 KiB burst at 1 MiB/s: at least ~0.7 s even with 4 connections.
+	if took := time.Since(start); took < 650*time.Millisecond {
+		t.Fatalf("limit not applied: %v", took)
 	}
 }

@@ -30,6 +30,7 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
+	"github.com/sadatdaniel/download_me_not/internal/limits"
 	"github.com/sadatdaniel/download_me_not/internal/netguard"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
 	"github.com/sadatdaniel/download_me_not/internal/selftest"
@@ -56,10 +57,10 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"))
+		jobAction("pause"), jobAction("resume"), limitsCmd())
 	for name, ms := range map[string]string{
 		"copy": "M3", "formats": "M3",
-		"peers": "M2", "pieces": "M2", "trackers": "M2", "limits": "M2", "recheck": "M2",
+		"peers": "M2", "pieces": "M2", "trackers": "M2", "recheck": "M2",
 		"cookies": "M3", "update": "M3", "pair": "M3", "uninstall": "M3",
 	} {
 		root.AddCommand(&cobra.Command{Use: name, Short: "(not implemented yet: " + ms + ")",
@@ -140,14 +141,13 @@ func serveCmd() *cobra.Command {
 		reg := provider.NewRegistry(pcfg, cfg.Paths.Data)
 		// The torrent engine starts with the first torrent job, so a server that only does web
 		// downloads never opens a torrent port or joins the DHT.
+		lim := limits.New(cfg.Limits.Down, cfg.Limits.Up)
 		jm := jobs.New(jobs.Options{DB: db, Downloads: cfg.Paths.Downloads, Client: netguard.Client(), Allowed: reg.Enabled,
-			Connections: setting(cfg, "web", "connections", 16),
-			NewEngine: func() (engine.Engine, error) {
-				return engine.New(engine.Options{DataDir: cfg.Paths.Downloads, ListenPort: setting(cfg, "torrent", "port", 42069), Control: netguard.Safe})
-			}})
+			Connections: setting(cfg, "web", "connections", 16), Limiter: lim.Down,
+			NewEngine: func() (engine.Engine, error) { return newEngine(cfg, lim) }})
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
-		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm})
+		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim})
 		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()
@@ -163,6 +163,57 @@ func serveCmd() *cobra.Command {
 		return nil
 	}
 	return c
+}
+
+// newEngine builds the torrent engine from the torrent provider settings (scope §5.9).
+func newEngine(cfg *config.Config, lim *limits.Limits) (engine.Engine, error) {
+	bind := settingStr(cfg, "torrent", "bind", "")
+	if ifc, err := net.InterfaceByName(bind); err == nil { // an interface name such as wg0
+		addrs, _ := ifc.Addrs()
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("interface %s has no address (VPN down?)", bind)
+		}
+		bind = addrs[0].(*net.IPNet).IP.String()
+	}
+	bl := &engine.Blocklist{}
+	if p := settingStr(cfg, "torrent", "blocklist", ""); p != "" {
+		f, err := os.Open(p)
+		if err != nil {
+			return nil, fmt.Errorf("blocklist: %w", err)
+		}
+		_, err = bl.Load(f)
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("blocklist: %w", err)
+		}
+	}
+	return engine.New(engine.Options{
+		DataDir: cfg.Paths.Downloads, ListenHost: bind, ListenPort: setting(cfg, "torrent", "port", 42069),
+		NoDHT: !settingBool(cfg, "torrent", "dht", true), NoPEX: !settingBool(cfg, "torrent", "pex", true),
+		NoUTP: !settingBool(cfg, "torrent", "utp", true), NoIPv6: !settingBool(cfg, "torrent", "ipv6", true),
+		Encryption: settingStr(cfg, "torrent", "encryption", "prefer"), MaxPeers: setting(cfg, "torrent", "maxPeers", 0),
+		Anonymous:   settingBool(cfg, "torrent", "anonymous", false),
+		DownLimiter: lim.Down, UpLimiter: lim.Up, Blocklist: bl, Control: netguard.Safe,
+	})
+}
+
+func settingStr(cfg *config.Config, prov, key, def string) string {
+	if v, ok := cfg.Providers[prov].Settings[key].(string); ok {
+		return v
+	}
+	return def
+}
+
+func settingBool(cfg *config.Config, prov, key string, def bool) bool {
+	switch v := cfg.Providers[prov].Settings[key].(type) {
+	case bool:
+		return v
+	case string:
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
+	}
+	return def
 }
 
 // setting reads an integer provider setting (YAML and env give different number types).
@@ -518,6 +569,63 @@ func addCmd() *cobra.Command {
 			return err
 		}
 		return show(j, func() { fmt.Printf("%s  %s  %s\n", j.ID, j.Kind, j.Source) })
+	}
+	return c
+}
+
+// parseRate reads "0", "500K", "5M", "1.5G" (binary units, bytes per second).
+func parseRate(s string) (int64, error) {
+	u := strings.ToUpper(strings.TrimSuffix(strings.TrimSuffix(strings.TrimSpace(s), "/s"), "B"))
+	mult := 1.0
+	if u != "" {
+		switch u[len(u)-1] {
+		case 'K':
+			mult, u = 1<<10, u[:len(u)-1]
+		case 'M':
+			mult, u = 1<<20, u[:len(u)-1]
+		case 'G':
+			mult, u = 1<<30, u[:len(u)-1]
+		}
+	}
+	f, err := strconv.ParseFloat(u, 64)
+	if err != nil || f < 0 {
+		return 0, fmt.Errorf("bad rate %q: use e.g. 0, 500K, 5M", s)
+	}
+	return int64(f * mult), nil
+}
+
+func limitsCmd() *cobra.Command {
+	c := &cobra.Command{Use: "limits", Short: "Show or set global bandwidth limits (e.g. --down 5M --up 500K; 0 = unlimited)"}
+	down := c.Flags().String("down", "", "download limit for all downloads together")
+	up := c.Flags().String("up", "", "torrent upload limit")
+	c.RunE = func(*cobra.Command, []string) error {
+		var cur struct{ Down, Up int64 }
+		if err := call("GET", "/v1/limits", nil, &cur); err != nil {
+			return err
+		}
+		if *down != "" || *up != "" {
+			var err error
+			if *down != "" {
+				if cur.Down, err = parseRate(*down); err != nil {
+					return err
+				}
+			}
+			if *up != "" {
+				if cur.Up, err = parseRate(*up); err != nil {
+					return err
+				}
+			}
+			if err := call("PUT", "/v1/limits", map[string]int64{"down": cur.Down, "up": cur.Up}, nil); err != nil {
+				return err
+			}
+		}
+		h := func(n int64) string {
+			if n == 0 {
+				return "unlimited"
+			}
+			return fmt.Sprintf("%.1f MiB/s", float64(n)/(1<<20))
+		}
+		return show(map[string]int64{"down": cur.Down, "up": cur.Up}, func() { fmt.Printf("down: %s\nup:   %s\n", h(cur.Down), h(cur.Up)) })
 	}
 	return c
 }

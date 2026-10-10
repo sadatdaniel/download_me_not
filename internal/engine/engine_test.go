@@ -8,8 +8,10 @@ import (
 	"errors"
 	"io"
 	"math/rand/v2"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,5 +114,23 @@ func TestRejectV2Only(t *testing.T) {
 	}
 	if _, _, err := e.Add([]byte("not a torrent")); err == nil {
 		t.Fatal("garbage accepted")
+	}
+}
+
+func TestBlocklistSwap(t *testing.T) {
+	var bl Blocklist
+	if _, ok := bl.Lookup(net.ParseIP("127.0.0.1")); ok || bl.NumRanges() != 0 {
+		t.Fatal("empty list blocks")
+	}
+	n, err := bl.Load(strings.NewReader("test:127.0.0.1-127.0.0.255\n"))
+	if err != nil || n != 1 {
+		t.Fatalf("load: %d %v", n, err)
+	}
+	if _, ok := bl.Lookup(net.ParseIP("127.0.0.7")); !ok {
+		t.Fatal("not blocked after load")
+	}
+	bl.Load(strings.NewReader(""))
+	if _, ok := bl.Lookup(net.ParseIP("127.0.0.7")); ok {
+		t.Fatal("still blocked after swapping in an empty list")
 	}
 }

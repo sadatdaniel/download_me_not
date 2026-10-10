@@ -16,12 +16,15 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/bencode"
+	"github.com/anacrolix/torrent/iplist"
 	"github.com/anacrolix/torrent/metainfo"
+	"golang.org/x/time/rate"
 )
 
 type Engine interface {
@@ -99,6 +102,16 @@ type Options struct {
 	NoDHT      bool
 	NoPEX      bool
 	NoUpload   bool
+	NoUTP      bool
+	NoIPv6     bool
+	Encryption string // "prefer" (default), "require" or "off"
+	MaxPeers   int    // established connections per torrent; 0 = library default (50)
+	// Anonymous turns off DHT and PEX and hides the client name. It does not hide the IP address;
+	// that needs a VPN or proxy (scope §5.9).
+	Anonymous bool
+	// Shared limiters (also used by web downloads); change them at runtime with SetLimit. nil = unlimited.
+	DownLimiter, UpLimiter *rate.Limiter
+	Blocklist              *Blocklist
 	// Control checks web seed, tracker and metadata HTTP dials (netguard.Safe). nil = unchecked.
 	Control func(network, address string, c syscall.RawConn) error
 }
@@ -126,6 +139,36 @@ func New(o Options) (Engine, error) {
 	cfg.NoUpload = o.NoUpload
 	cfg.Seed = !o.NoUpload
 	cfg.NoDefaultPortForwarding = true // UPnP is opt-in (scope §5.9)
+	cfg.DisableUTP = o.NoUTP
+	if o.NoIPv6 {
+		cfg.DisableIPv6 = true
+	}
+	switch o.Encryption {
+	case "require":
+		cfg.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{Preferred: true, RequirePreferred: true}
+	case "off":
+		cfg.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{}
+	default:
+		cfg.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{Preferred: true}
+	}
+	if o.MaxPeers > 0 {
+		cfg.EstablishedConnsPerTorrent = o.MaxPeers
+	}
+	if o.Anonymous {
+		cfg.NoDHT, cfg.DisablePEX = true, true
+		cfg.Bep20 = "-XX0000-"
+		cfg.ExtendedHandshakeClientVersion = ""
+		cfg.HTTPUserAgent = ""
+	}
+	if o.DownLimiter != nil {
+		cfg.DownloadRateLimiter = o.DownLimiter
+	}
+	if o.UpLimiter != nil {
+		cfg.UploadRateLimiter = o.UpLimiter
+	}
+	if o.Blocklist != nil {
+		cfg.IPBlocklist = o.Blocklist
+	}
 	if o.Control != nil {
 		d := &net.Dialer{Timeout: 30 * time.Second, Control: o.Control}
 		cfg.HTTPDialContext = d.DialContext
@@ -378,4 +421,32 @@ func Create(path string, trackers []string) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// Blocklist is an iplist.Ranger whose list can be replaced while the engine runs
+// (anacrolix only takes a blocklist at start).
+type Blocklist struct{ p atomic.Pointer[iplist.IPList] }
+
+func (b *Blocklist) Lookup(ip net.IP) (iplist.Range, bool) {
+	if l := b.p.Load(); l != nil {
+		return l.Lookup(ip)
+	}
+	return iplist.Range{}, false
+}
+
+func (b *Blocklist) NumRanges() int {
+	if l := b.p.Load(); l != nil {
+		return l.NumRanges()
+	}
+	return 0
+}
+
+// Load replaces the list with one in P2P/eMule text format ("desc:1.2.3.0-1.2.3.255").
+func (b *Blocklist) Load(r io.Reader) (int, error) {
+	l, err := iplist.NewFromReader(r)
+	if err != nil {
+		return 0, err
+	}
+	b.p.Store(l)
+	return l.NumRanges(), nil
 }
