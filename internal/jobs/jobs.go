@@ -44,6 +44,7 @@ type Options struct {
 	Seed            SeedPolicy                      // default seeding policy for torrents
 	DiskReserve     int64                           // keep this much free in the download folder; default 1 GiB
 	FreeSpace       func(dir string) (int64, error) // tests override; default statfs
+	Post            Post                            // default post-completion steps
 }
 
 var (
@@ -78,7 +79,14 @@ type sample struct {
 	done int64
 }
 
+// Post lists what happens after a download completes (scope §5.9 pipeline). Drive copy comes in M3.
+type Post struct {
+	Extract       bool `json:"extract,omitempty"`       // unpack archives into a folder next to them
+	DeleteArchive bool `json:"deleteArchive,omitempty"` // remove the archive after a successful unpack
+}
+
 type webMeta struct {
+	Post   *Post             `json:"post,omitempty"`
 	Header map[string]string `json:"header,omitempty"`
 	HTTP   *httpdl.State     `json:"http,omitempty"`
 }
@@ -89,7 +97,8 @@ type torMeta struct {
 	Started  bool           `json:"started"`            // data may exist on disk: recheck before resuming
 	Trackers [][]string     `json:"trackers,omitempty"` // user-edited tracker list, re-applied on start
 	Seed     *SeedPolicy    `json:"seed,omitempty"`     // per-torrent override
-	Files    map[int]string `json:"files,omitempty"`    // per-file priority: skip, normal, high
+	Post     *Post          `json:"post,omitempty"`
+	Files    map[int]string `json:"files,omitempty"` // per-file priority: skip, normal, high
 }
 
 func New(o Options) *Manager {
@@ -137,6 +146,7 @@ type AddRequest struct {
 	Header   map[string]string `json:"header,omitempty"`   // e.g. Cookie, Referer, User-Agent from the browser
 	Seed     *SeedPolicy       `json:"seed,omitempty"`     // torrents: override the default seeding policy
 	Priority int               `json:"priority,omitempty"` // higher starts first
+	Post     *Post             `json:"post,omitempty"`     // after completion; default from settings
 }
 
 // Add creates a job. Adding a torrent that already has a job returns that job and true.
@@ -167,14 +177,14 @@ func (m *Manager) Add(r AddRequest) (store.Job, bool, error) {
 		if j.Source == "" {
 			j.Source = "torrent:" + ih
 		}
-		meta = torMeta{Torrent: r.Torrent, Magnet: strings.TrimPrefix(r.Source, "torrent:"), Seed: r.Seed}
+		meta = torMeta{Torrent: r.Torrent, Magnet: strings.TrimPrefix(r.Source, "torrent:"), Seed: r.Seed, Post: r.Post}
 	default:
 		u, err := url.Parse(r.Source)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return store.Job{}, false, ErrBadSource
 		}
 		j.Kind, j.Source = "web", r.Source
-		meta = webMeta{Header: r.Header}
+		meta = webMeta{Header: r.Header, Post: r.Post}
 	}
 	if m.o.Allowed != nil && !m.o.Allowed(j.Kind) {
 		return store.Job{}, false, fmt.Errorf("the %s provider is switched off", j.Kind)
@@ -430,7 +440,7 @@ func (m *Manager) finish(ctx context.Context, id string, err error) {
 	f := map[string]any{}
 	switch {
 	case err == nil:
-		f["state"], f["error"] = "done", ""
+		f["state"], f["error"] = "done", reason // non-fatal notes, e.g. an archive that could not be unpacked
 	case ctx.Err() != nil && j.Want == "paused":
 		f["state"] = "paused"
 	case ctx.Err() != nil:
@@ -511,7 +521,11 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 	if err := os.Rename(part, filepath.Join(m.o.Downloads, final)); err != nil {
 		return err
 	}
-	return store.SetJob(m.o.DB, j.ID, map[string]any{"path": final, "done": d.Completed(), "total": d.State().Size})
+	if err := store.SetJob(m.o.DB, j.ID, map[string]any{"path": final, "done": d.Completed(), "total": d.State().Size}); err != nil {
+		return err
+	}
+	m.removeFiles(m.postProcess(ctx, r, j.ID, meta.Post, []string{final}))
+	return nil
 }
 
 // unique picks a free name in the download folder: "a.mp4", "a (1).mp4", ...
@@ -615,7 +629,16 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 		select {
 		case <-t.Done():
 			store.SetJob(m.o.DB, j.ID, map[string]any{"done": t.Stats().Completed})
-			return m.seed(ctx, r, j.ID, t, total, meta.Seed)
+			var paths []string
+			for _, f := range t.Files() {
+				paths = append(paths, f.Path)
+			}
+			del := m.postProcess(ctx, r, j.ID, meta.Post, paths)
+			err := m.seed(ctx, r, j.ID, t, total, meta.Seed)
+			if err == nil {
+				m.removeFiles(del) // only after seeding: peers may still need the archive
+			}
+			return err
 		case <-ctx.Done():
 			t.Pause()
 			store.SetJob(m.o.DB, j.ID, map[string]any{"done": t.Stats().Completed})

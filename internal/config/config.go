@@ -33,8 +33,10 @@ type Config struct {
 		Signkey string  `koanf:"signkey"` // HMAC key for signed stream URLs
 	} `koanf:"auth"`
 	Jobs struct {
-		MaxActive int   `koanf:"maxactive"` // downloads at the same time (seeding ones don't count)
-		Reserve   int64 `koanf:"reserve"`   // bytes to keep free in the download folder
+		MaxActive     int   `koanf:"maxactive"`     // downloads at the same time (seeding ones don't count)
+		Reserve       int64 `koanf:"reserve"`       // bytes to keep free in the download folder
+		Extract       bool  `koanf:"extract"`       // unpack archives after download by default
+		DeleteArchive bool  `koanf:"deletearchive"` // and delete the archive afterwards
 	} `koanf:"jobs"`
 	Limits struct {
 		Down int64 `koanf:"down"` // bytes/s, 0 = unlimited

@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/sadatdaniel/download_me_not/internal/engine"
+	"github.com/sadatdaniel/download_me_not/internal/extract"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 )
 
@@ -155,4 +159,51 @@ func (m *Manager) SetFilePriority(id string, index int, prio string) error {
 	meta.Files[index] = prio
 	b, _ := json.Marshal(meta)
 	return store.SetJob(m.o.DB, id, map[string]any{"meta": json.RawMessage(b)})
+}
+
+// postProcess runs the post-completion steps on finished files (paths relative to the download
+// folder) and returns archives to delete later plus a note for the job's error field. Failures here
+// never fail the download itself.
+func (m *Manager) postProcess(ctx context.Context, r *runner, id string, override *Post, paths []string) (archives []string) {
+	p := m.o.Post
+	if override != nil {
+		p = *override
+	}
+	if !p.Extract {
+		return nil
+	}
+	var notes []string
+	for _, rel := range paths {
+		if !extract.IsArchive(rel) {
+			continue
+		}
+		store.SetJob(m.o.DB, id, map[string]any{"state": "extracting"})
+		free, _ := m.o.FreeSpace(m.o.Downloads)
+		res, err := extract.Extract(ctx, filepath.Join(m.o.Downloads, rel), extract.Limits{MaxBytes: max(free-m.o.DiskReserve, 1)})
+		if err != nil {
+			notes = append(notes, fmt.Sprintf("%s: %v", filepath.Base(rel), err))
+			continue
+		}
+		if p.DeleteArchive {
+			archives = append(archives, rel)
+		}
+		_ = res
+	}
+	if len(notes) > 0 {
+		r.mu.Lock()
+		r.reason = "unpack: " + strings.Join(notes, "; ")
+		r.mu.Unlock()
+	}
+	return archives
+}
+
+func (m *Manager) removeFiles(rels []string) {
+	root, err := os.OpenRoot(m.o.Downloads)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	for _, rel := range rels {
+		root.Remove(rel)
+	}
 }

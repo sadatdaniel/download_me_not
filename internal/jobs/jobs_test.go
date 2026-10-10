@@ -3,6 +3,7 @@ package jobs
 // Offline (AGENTS.md rule 7): loopback HTTP servers, an in-process seeder and tracker, DHT off.
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -357,5 +358,24 @@ func TestSeedingFreesSlot(t *testing.T) {
 	}
 	if err := m.SetFilePriority(tj.ID, 5, "skip"); err == nil {
 		t.Fatal("bad index accepted")
+	}
+}
+
+func TestUnpackAfterDownload(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("inside/readme.txt")
+	w.Write([]byte("unpacked"))
+	zw.Close()
+	url := fileServer(t, buf.Bytes(), 0, nil)
+	dir := t.TempDir()
+	e := start(t, filepath.Join(dir, "j.db"), dir)
+	j, _, _ := e.m.Add(AddRequest{Source: url + "/bundle.zip", Post: &Post{Extract: true, DeleteArchive: true}})
+	j = waitState(t, e.m, j.ID, "done", 10*time.Second)
+	if b, err := os.ReadFile(filepath.Join(dir, "bundle", "inside", "readme.txt")); err != nil || string(b) != "unpacked" || j.Error != "" {
+		t.Fatalf("unpack: %q %v (job error %q)", b, err, j.Error)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bundle.zip")); !os.IsNotExist(err) {
+		t.Fatal("archive not deleted")
 	}
 }

@@ -145,6 +145,7 @@ func serveCmd() *cobra.Command {
 		jm := jobs.New(jobs.Options{DB: db, Downloads: cfg.Paths.Downloads, Client: netguard.Client(), Allowed: reg.Enabled,
 			Connections: setting(cfg, "web", "connections", 16), Limiter: lim.Down,
 			MaxActive: cfg.Jobs.MaxActive, DiskReserve: cfg.Jobs.Reserve,
+			Post: jobs.Post{Extract: cfg.Jobs.Extract, DeleteArchive: cfg.Jobs.DeleteArchive},
 			Seed: jobs.SeedPolicy{Policy: settingStr(cfg, "torrent", "seed", "stop"),
 				Ratio: settingFloat(cfg, "torrent", "seedRatio", 1), Minutes: setting(cfg, "torrent", "seedMinutes", 60)},
 			NewEngine: func() (engine.Engine, error) { return newEngine(cfg, lim) }})
@@ -571,8 +572,13 @@ func addCmd() *cobra.Command {
 	headers := c.Flags().StringArrayP("header", "H", nil, `request header, e.g. -H "Cookie: a=b" (repeatable)`)
 	seed := c.Flags().String("seed", "", "torrents: stop, ratio:1.5, time:60 (minutes) or forever")
 	prio := c.Flags().Int("priority", 0, "queue priority: higher starts first")
+	unpack := c.Flags().Bool("extract", false, "unpack archives when done (default from jobs.extract)")
+	delArc := c.Flags().Bool("delete-archive", false, "with --extract: delete the archive after unpacking")
 	c.RunE = func(_ *cobra.Command, a []string) error {
 		req := jobs.AddRequest{Source: a[0], Mode: *mode, Header: map[string]string{}, Priority: *prio}
+		if c.Flags().Changed("extract") || *delArc {
+			req.Post = &jobs.Post{Extract: *unpack || *delArc, DeleteArchive: *delArc}
+		}
 		if *seed != "" {
 			p, err := parseSeed(*seed)
 			if err != nil {
