@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -165,5 +166,103 @@ func TestDHTNodesPersist(t *testing.T) {
 	b.Close()
 	if fi, err := os.Stat(nodes); err != nil || fi.Size() == 0 {
 		t.Fatalf("nodes file not written: %v", err)
+	}
+}
+
+// socksServer is a minimal SOCKS5 server (no auth, CONNECT only) that counts tunnels.
+func socksServer(t *testing.T) (string, *atomic.Int64) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var n atomic.Int64
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				buf := make([]byte, 262)
+				if _, err := io.ReadFull(c, buf[:2]); err != nil { // VER NMETHODS
+					return
+				}
+				io.ReadFull(c, buf[:buf[1]])
+				c.Write([]byte{5, 0})                              // no auth
+				if _, err := io.ReadFull(c, buf[:4]); err != nil { // VER CMD RSV ATYP
+					return
+				}
+				var host string
+				switch buf[3] {
+				case 1:
+					io.ReadFull(c, buf[:4])
+					host = net.IP(buf[:4]).String()
+				case 3:
+					io.ReadFull(c, buf[:1])
+					l := int(buf[0])
+					io.ReadFull(c, buf[:l])
+					host = string(buf[:l])
+				default:
+					return
+				}
+				io.ReadFull(c, buf[:2])
+				port := int(buf[0])<<8 | int(buf[1])
+				up, err := net.Dial("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
+				if err != nil {
+					c.Write([]byte{5, 5, 0, 1, 0, 0, 0, 0, 0, 0})
+					return
+				}
+				defer up.Close()
+				n.Add(1)
+				c.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
+				go io.Copy(up, c)
+				io.Copy(c, up)
+			}()
+		}
+	}()
+	return ln.Addr().String(), &n
+}
+
+func TestSocks5(t *testing.T) {
+	sdir := t.TempDir()
+	data := make([]byte, 1<<20)
+	rand.NewChaCha8([32]byte{3}).Read(data)
+	os.WriteFile(filepath.Join(sdir, "s.bin"), data, 0o644)
+	tb, err := Create(filepath.Join(sdir, "s.bin"), []string{"udp://tracker.invalid:1337/announce", "http://tracker.invalid/announce"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seeder := newEngine(t, sdir)
+	st, _, _ := seeder.Add(tb)
+	st.Recheck(context.Background())
+
+	addr, tunnels := socksServer(t)
+	e, err := New(Options{DataDir: t.TempDir(), ListenHost: "127.0.0.1", NoPEX: true, Socks5: addr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	lt, _, err := e.Add(tb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tier := range lt.Trackers() {
+		for _, u := range tier {
+			if strings.HasPrefix(u, "udp:") {
+				t.Fatalf("udp tracker kept in proxy mode: %v", lt.Trackers())
+			}
+		}
+	}
+	lt.(*tor).t.AddClientPeer(seeder.cl)
+	lt.Start()
+	select {
+	case <-lt.Done():
+	case <-time.After(20 * time.Second):
+		t.Fatalf("no download through the proxy: %+v", lt.Stats())
+	}
+	if tunnels.Load() == 0 {
+		t.Fatal("peer connection did not use the proxy")
 	}
 }

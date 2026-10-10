@@ -46,6 +46,9 @@ type Options struct {
 	FreeSpace       func(dir string) (int64, error) // tests override; default statfs
 	Post            Post                            // default post-completion steps
 	LearnTrackers   bool                            // swarm memory: remember good trackers, add them to new public torrents
+	// TorrentGate returns a reason when torrents must not run (kill switch: the bound VPN interface is
+	// down). Running torrents stop and wait, and resume when it returns "". nil = always open.
+	TorrentGate func() string
 }
 
 var (
@@ -251,6 +254,8 @@ func (m *Manager) SetMode(id, mode string) error {
 	}
 	if j.Kind == "web" {
 		m.stop(id)
+	} else if t, err := m.torrentOf(id); err == nil && mode == "stream" {
+		t.PrioritizeEnds(largest(t.Files()))
 	}
 	m.poke()
 	return nil
@@ -353,6 +358,10 @@ func (m *Manager) reconcile(ctx context.Context) error {
 		}
 		return int(a.Created - b.Created)
 	})
+	gate := ""
+	if m.o.TorrentGate != nil {
+		gate = m.o.TorrentGate()
+	}
 	active := 0
 	for _, r := range m.run {
 		r.mu.Lock()
@@ -372,6 +381,15 @@ func (m *Manager) reconcile(ctx context.Context) error {
 			r.cancel() // the runner records "paused" when it exits
 		case j.Want == "paused" && j.State != "paused" && j.State != "failed":
 			store.SetJob(m.o.DB, j.ID, map[string]any{"state": "paused"})
+		case j.Want == "running" && j.Kind == "torrent" && gate != "" && r != nil:
+			r.mu.Lock()
+			r.reason = gate
+			r.mu.Unlock()
+			r.cancel()
+		case j.Want == "running" && j.Kind == "torrent" && gate != "":
+			if j.State != "queued" || j.Error != gate {
+				store.SetJob(m.o.DB, j.ID, map[string]any{"state": "queued", "error": gate})
+			}
 		case j.Want == "running" && r != nil && lowDisk && j.State != "seeding":
 			r.mu.Lock()
 			r.reason = fmt.Sprintf("waiting for disk space: %d MiB free, keeping %d MiB in reserve", free>>20, m.o.DiskReserve>>20)
@@ -383,7 +401,7 @@ func (m *Manager) reconcile(ctx context.Context) error {
 				store.SetJob(m.o.DB, j.ID, map[string]any{"state": "queued", "error": msg})
 			}
 		case j.Want == "running" && r == nil && active < m.o.MaxActive:
-			if j.Error != "" && strings.HasPrefix(j.Error, "waiting for disk space") {
+			if strings.HasPrefix(j.Error, "waiting for disk space") || strings.HasPrefix(j.Error, "kill switch") {
 				store.SetJob(m.o.DB, j.ID, map[string]any{"error": ""})
 			}
 			m.start(ctx, j)
@@ -625,11 +643,14 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 		return err
 	}
 	t.Resume()
-	// Both modes download everything; a player's reader raises priority where it reads, which is
-	// what stream mode needs. ponytail: first/last-piece priority for stream mode comes with M2.
+	// Both modes download everything; in stream mode the largest file's first and last pieces come
+	// first, and a player's reader raises priority wherever it reads.
 	t.Start() // synchronous here: metadata is known, so file priorities below aren't overwritten
 	for i, p := range meta.Files {
 		t.SetFilePriority(i, filePriority[p])
+	}
+	if j.Mode == "stream" {
+		t.PrioritizeEnds(largest(t.Files()))
 	}
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()

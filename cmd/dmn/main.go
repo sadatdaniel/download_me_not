@@ -2,7 +2,9 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -142,6 +144,10 @@ func serveCmd() *cobra.Command {
 		// The torrent engine starts with the first torrent job, so a server that only does web
 		// downloads never opens a torrent port or joins the DHT.
 		lim := limits.New(cfg.Limits.Down, cfg.Limits.Up)
+		bl := &engine.Blocklist{}
+		if src := settingStr(cfg, "torrent", "blocklist", ""); src != "" {
+			go loadBlocklist(ctx, src, bl)
+		}
 		jm := jobs.New(jobs.Options{DB: db, Downloads: cfg.Paths.Downloads, Client: netguard.Client(), Allowed: reg.Enabled,
 			Connections: setting(cfg, "web", "connections", 16), Limiter: lim.Down,
 			MaxActive: cfg.Jobs.MaxActive, DiskReserve: cfg.Jobs.Reserve,
@@ -149,7 +155,9 @@ func serveCmd() *cobra.Command {
 			LearnTrackers: settingBool(cfg, "torrent", "learnTrackers", true),
 			Seed: jobs.SeedPolicy{Policy: settingStr(cfg, "torrent", "seed", "stop"),
 				Ratio: settingFloat(cfg, "torrent", "seedRatio", 1), Minutes: setting(cfg, "torrent", "seedMinutes", 60)},
-			NewEngine: func() (engine.Engine, error) { return newEngine(cfg, lim) }})
+			NewEngine:   func() (engine.Engine, error) { return newEngine(cfg, lim, bl) },
+			TorrentGate: killSwitch(settingStr(cfg, "torrent", "bind", "")),
+		})
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
 		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim})
@@ -170,8 +178,82 @@ func serveCmd() *cobra.Command {
 	return c
 }
 
+// killSwitch returns a gate that closes while the bound interface (e.g. wg0) is down or has no
+// address, so torrent traffic never falls back to the normal connection. nil when not bound to an
+// interface by name.
+func killSwitch(bind string) func() string {
+	if _, err := net.InterfaceByName(bind); bind == "" || err != nil {
+		return nil
+	}
+	return func() string {
+		ifc, err := net.InterfaceByName(bind)
+		if err != nil || ifc.Flags&net.FlagUp == 0 {
+			return "kill switch: " + bind + " is down"
+		}
+		if addrs, _ := ifc.Addrs(); len(addrs) == 0 {
+			return "kill switch: " + bind + " has no address"
+		}
+		return ""
+	}
+}
+
+// loadBlocklist reads a P2P-format list from a file or an http(s) URL (gzip allowed) and refreshes
+// a URL daily. Errors are logged; the previous list stays in force.
+func loadBlocklist(ctx context.Context, src string, bl *engine.Blocklist) {
+	load := func() {
+		var r io.ReadCloser
+		var err error
+		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+			var resp *http.Response
+			if resp, err = netguard.Client().Get(src); err == nil {
+				if resp.StatusCode != 200 {
+					resp.Body.Close()
+					err = fmt.Errorf("HTTP %d", resp.StatusCode)
+				}
+				r = resp.Body
+			}
+		} else {
+			r, err = os.Open(src)
+		}
+		if err == nil {
+			defer r.Close()
+			br := bufio.NewReader(r)
+			var in io.Reader = br
+			if magic, _ := br.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+				var gz *gzip.Reader
+				if gz, err = gzip.NewReader(br); err == nil {
+					in = gz
+				}
+			}
+			if err == nil {
+				var n int
+				if n, err = bl.Load(in); err == nil {
+					fmt.Fprintf(os.Stderr, "blocklist: %d ranges loaded\n", n)
+				}
+			}
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "blocklist:", err)
+		}
+	}
+	load()
+	if !strings.HasPrefix(src, "http") {
+		return
+	}
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			load()
+		}
+	}
+}
+
 // newEngine builds the torrent engine from the torrent provider settings (scope §5.9).
-func newEngine(cfg *config.Config, lim *limits.Limits) (engine.Engine, error) {
+func newEngine(cfg *config.Config, lim *limits.Limits, bl *engine.Blocklist) (engine.Engine, error) {
 	bind := settingStr(cfg, "torrent", "bind", "")
 	if ifc, err := net.InterfaceByName(bind); err == nil { // an interface name such as wg0
 		addrs, _ := ifc.Addrs()
@@ -179,18 +261,6 @@ func newEngine(cfg *config.Config, lim *limits.Limits) (engine.Engine, error) {
 			return nil, fmt.Errorf("interface %s has no address (VPN down?)", bind)
 		}
 		bind = addrs[0].(*net.IPNet).IP.String()
-	}
-	bl := &engine.Blocklist{}
-	if p := settingStr(cfg, "torrent", "blocklist", ""); p != "" {
-		f, err := os.Open(p)
-		if err != nil {
-			return nil, fmt.Errorf("blocklist: %w", err)
-		}
-		_, err = bl.Load(f)
-		f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("blocklist: %w", err)
-		}
 	}
 	return engine.New(engine.Options{
 		DataDir: cfg.Paths.Downloads, ListenHost: bind, ListenPort: setting(cfg, "torrent", "port", 42069),
@@ -200,6 +270,8 @@ func newEngine(cfg *config.Config, lim *limits.Limits) (engine.Engine, error) {
 		Anonymous:   settingBool(cfg, "torrent", "anonymous", false),
 		DownLimiter: lim.Down, UpLimiter: lim.Up, Blocklist: bl, Control: netguard.Safe,
 		DHTNodesFile: filepath.Join(cfg.Paths.Data, "dht-nodes.dat"),
+		Socks5:       settingStr(cfg, "torrent", "socks5", ""),
+		UPnP:         settingBool(cfg, "torrent", "upnp", false),
 	})
 }
 

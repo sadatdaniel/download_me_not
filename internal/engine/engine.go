@@ -13,8 +13,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -25,6 +28,7 @@ import (
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/iplist"
 	"github.com/anacrolix/torrent/metainfo"
+	"golang.org/x/net/proxy"
 	"golang.org/x/time/rate"
 )
 
@@ -53,7 +57,8 @@ type Torrent interface {
 	Swarm() Swarm
 	Trackers() [][]string
 	SetTrackers(tiers [][]string)
-	Private() bool // BEP 27: never add outside trackers or record its tracker URLs (they carry passkeys)
+	Private() bool                // BEP 27: never add outside trackers or record its tracker URLs (they carry passkeys)
+	PrioritizeEnds(fileIndex int) // stream mode: first and last pieces first
 	// Reader for one file; reading and seeking move download priority (stream mode).
 	Reader(index int) io.ReadSeekCloser
 	Drop(deleteData bool) error
@@ -134,14 +139,19 @@ type Options struct {
 	DHTNodesFile string
 	// DHTBootstrap replaces the public bootstrap routers; a non-nil empty slice means none (tests, private DHT).
 	DHTBootstrap []string
+	// Socks5 ("host:port", optional "user:pass@host:port") sends peer connections, HTTP trackers and web seeds
+	// through a proxy. UDP cannot go through it, so DHT, uTP and UDP trackers are switched off (no IP leak).
+	Socks5 string
+	UPnP   bool // ask the router to forward the listening port (off by default, scope §5.9)
 	// Control checks web seed, tracker and metadata HTTP dials (netguard.Safe). nil = unchecked.
 	Control func(network, address string, c syscall.RawConn) error
 }
 
 type engine struct {
-	cl        *torrent.Client
-	dataDir   string
-	nodesFile string
+	cl            *torrent.Client
+	dataDir       string
+	nodesFile     string
+	noUDPTrackers bool // proxy mode
 }
 
 func New(o Options) (Engine, error) {
@@ -161,7 +171,7 @@ func New(o Options) (Engine, error) {
 	cfg.DisablePEX = o.NoPEX
 	cfg.NoUpload = o.NoUpload
 	cfg.Seed = !o.NoUpload
-	cfg.NoDefaultPortForwarding = true // UPnP is opt-in (scope §5.9)
+	cfg.NoDefaultPortForwarding = !o.UPnP // UPnP is opt-in (scope §5.9)
 	cfg.DisableUTP = o.NoUTP
 	if o.NoIPv6 {
 		cfg.DisableIPv6 = true
@@ -211,11 +221,35 @@ func New(o Options) (Engine, error) {
 			}
 		}
 	}
+	var socks proxy.ContextDialer
+	if o.Socks5 != "" {
+		u, err := url.Parse("socks5://" + o.Socks5)
+		if err != nil {
+			return nil, fmt.Errorf("socks5: %w", err)
+		}
+		var auth *proxy.Auth
+		if u.User != nil {
+			pw, _ := u.User.Password()
+			auth = &proxy.Auth{User: u.User.Username(), Password: pw}
+		}
+		d, err := proxy.SOCKS5("tcp", u.Host, auth, proxy.Direct)
+		if err != nil {
+			return nil, fmt.Errorf("socks5: %w", err)
+		}
+		socks = d.(proxy.ContextDialer)
+		cfg.DialForPeerConns = false
+		cfg.NoDHT, cfg.DisableUTP = true, true
+		cfg.HTTPProxy = http.ProxyURL(u)
+		cfg.HTTPDialContext, cfg.TrackerDialContext = nil, nil // they would block a LAN proxy; the proxy decides
+	}
 	cl, err := torrent.NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	e := &engine{cl: cl, dataDir: o.DataDir, nodesFile: o.DHTNodesFile}
+	e := &engine{cl: cl, dataDir: o.DataDir, nodesFile: o.DHTNodesFile, noUDPTrackers: socks != nil}
+	if socks != nil {
+		cl.AddDialer(torrent.NetworkDialer{Network: "tcp", Dialer: socks})
+	}
 	if o.DHTNodesFile != "" {
 		for _, s := range cl.DhtServers() {
 			if w, ok := s.(torrent.AnacrolixDhtServerWrapper); ok {
@@ -259,7 +293,11 @@ func (e *engine) Add(b []byte) (_ Torrent, isNew bool, err error) {
 			return nil, false, err
 		}
 	}
-	return &tor{t: t, dataDir: e.dataDir}, isNew, nil
+	tt := &tor{t: t, dataDir: e.dataDir, noUDP: e.noUDPTrackers}
+	if tt.noUDP {
+		tt.SetTrackers(tt.Trackers()) // drops udp:// trackers in proxy mode
+	}
+	return tt, isNew, nil
 }
 
 func (e *engine) Get(infohash string) (Torrent, bool) {
@@ -271,7 +309,7 @@ func (e *engine) Get(infohash string) (Torrent, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &tor{t: t, dataDir: e.dataDir}, true
+	return &tor{t: t, dataDir: e.dataDir, noUDP: e.noUDPTrackers}, true
 }
 
 func (e *engine) Port() int { return e.cl.LocalPort() }
@@ -294,6 +332,7 @@ func (e *engine) Close() error {
 type tor struct {
 	t       *torrent.Torrent
 	dataDir string
+	noUDP   bool
 
 	mu       sync.Mutex
 	lastAt   time.Time
@@ -559,7 +598,38 @@ func (t *tor) Trackers() [][]string {
 	return mi.UpvertedAnnounceList()
 }
 
-func (t *tor) SetTrackers(tiers [][]string) { t.t.ModifyTrackers(tiers) }
+func (t *tor) SetTrackers(tiers [][]string) {
+	if t.noUDP {
+		var kept [][]string
+		for _, tier := range tiers {
+			var k []string
+			for _, u := range tier {
+				if !strings.HasPrefix(u, "udp:") {
+					k = append(k, u)
+				}
+			}
+			if len(k) > 0 {
+				kept = append(kept, k)
+			}
+		}
+		tiers = kept
+	}
+	t.t.ModifyTrackers(tiers)
+}
+
+// PrioritizeEnds fetches a file's first and last pieces first: players read the container index
+// there (MP4 often keeps it at the end) before they can start (stream mode, scope §5.3).
+func (t *tor) PrioritizeEnds(i int) {
+	fs := t.t.Files()
+	if i < 0 || i >= len(fs) {
+		return
+	}
+	b, e := fs[i].BeginPieceIndex(), fs[i].EndPieceIndex()
+	if e > b {
+		t.t.Piece(b).SetPriority(torrent.PiecePriorityNow)
+		t.t.Piece(e - 1).SetPriority(torrent.PiecePriorityNow)
+	}
+}
 
 // Private reports the BEP 27 private flag. Unknown until metadata arrives (false).
 func (t *tor) Private() bool {

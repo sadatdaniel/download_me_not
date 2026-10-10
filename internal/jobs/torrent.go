@@ -260,3 +260,13 @@ func (m *Manager) addLearnedTrackers(t engine.Torrent) {
 		t.SetTrackers(tiers)
 	}
 }
+
+func largest(files []engine.File) int {
+	best := -1
+	for i, f := range files {
+		if best < 0 || f.Length > files[best].Length {
+			best = i
+		}
+	}
+	return best
+}

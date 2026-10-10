@@ -414,3 +414,38 @@ func TestSwarmMemoryLearns(t *testing.T) {
 		t.Fatalf("learned: %+v", top)
 	}
 }
+
+func TestKillSwitch(t *testing.T) {
+	tb, _ := swarmFixture(t)
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "j.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var down atomic.Bool
+	down.Store(true)
+	m := New(Options{DB: db, Downloads: dir, Client: http.DefaultClient, Tick: 20 * time.Millisecond,
+		TorrentGate: func() string {
+			if down.Load() {
+				return "kill switch: wg0 is down"
+			}
+			return ""
+		},
+		NewEngine: func() (engine.Engine, error) {
+			return engine.New(engine.Options{DataDir: dir, ListenHost: "127.0.0.1", NoDHT: true, NoPEX: true})
+		}})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- m.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	j, _, _ := m.Add(AddRequest{Torrent: tb, Mode: "stream"})
+	time.Sleep(200 * time.Millisecond)
+	if got, _ := m.Get(j.ID); got.State != "queued" || got.Error != "kill switch: wg0 is down" {
+		t.Fatalf("gate closed but job %q %q", got.State, got.Error)
+	}
+	down.Store(false)
+	if got := waitState(t, m, j.ID, "done", 20*time.Second); got.Error != "" {
+		t.Fatalf("error not cleared: %q", got.Error)
+	}
+}
