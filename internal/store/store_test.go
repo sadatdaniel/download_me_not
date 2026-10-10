@@ -38,3 +38,22 @@ func TestOpenMigrateReopen(t *testing.T) {
 	}
 	os.Remove(path)
 }
+
+func TestLearnedTrackers(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	LearnTrackers(db, []string{"udp://a/announce", "udp://b/announce"}, true)
+	LearnTrackers(db, []string{"udp://a/announce"}, true)
+	LearnTrackers(db, []string{"udp://b/announce", "udp://c/announce"}, false)
+	top, err := TopTrackers(db, 10)
+	if err != nil || len(top) != 1 || top[0].URL != "udp://a/announce" || top[0].Success != 2 {
+		t.Fatalf("%+v %v", top, err) // b: 1 success 1 failure (not better), c: never worked
+	}
+	ForgetTrackers(db)
+	if top, _ := TopTrackers(db, 10); len(top) != 0 {
+		t.Fatal("not forgotten")
+	}
+}

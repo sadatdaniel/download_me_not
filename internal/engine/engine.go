@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anacrolix/dht/v2"
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/iplist"
@@ -52,6 +53,7 @@ type Torrent interface {
 	Swarm() Swarm
 	Trackers() [][]string
 	SetTrackers(tiers [][]string)
+	Private() bool // BEP 27: never add outside trackers or record its tracker URLs (they carry passkeys)
 	// Reader for one file; reading and seeking move download priority (stream mode).
 	Reader(index int) io.ReadSeekCloser
 	Drop(deleteData bool) error
@@ -128,13 +130,18 @@ type Options struct {
 	// Shared limiters (also used by web downloads); change them at runtime with SetLimit. nil = unlimited.
 	DownLimiter, UpLimiter *rate.Limiter
 	Blocklist              *Blocklist
+	// DHTNodesFile keeps the DHT routing table across restarts so peers are found faster (swarm memory).
+	DHTNodesFile string
+	// DHTBootstrap replaces the public bootstrap routers; a non-nil empty slice means none (tests, private DHT).
+	DHTBootstrap []string
 	// Control checks web seed, tracker and metadata HTTP dials (netguard.Safe). nil = unchecked.
 	Control func(network, address string, c syscall.RawConn) error
 }
 
 type engine struct {
-	cl      *torrent.Client
-	dataDir string
+	cl        *torrent.Client
+	dataDir   string
+	nodesFile string
 }
 
 func New(o Options) (Engine, error) {
@@ -190,11 +197,33 @@ func New(o Options) (Engine, error) {
 		cfg.HTTPDialContext = d.DialContext
 		cfg.TrackerDialContext = d.DialContext
 	}
+	if o.DHTBootstrap != nil {
+		boot := o.DHTBootstrap
+		cfg.DhtStartingNodes = func(network string) dht.StartingNodesGetter {
+			return func() ([]dht.Addr, error) {
+				var out []dht.Addr
+				for _, b := range boot {
+					if ua, err := net.ResolveUDPAddr(network, b); err == nil {
+						out = append(out, dht.NewAddr(ua))
+					}
+				}
+				return out, nil
+			}
+		}
+	}
 	cl, err := torrent.NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &engine{cl: cl, dataDir: o.DataDir}, nil
+	e := &engine{cl: cl, dataDir: o.DataDir, nodesFile: o.DHTNodesFile}
+	if o.DHTNodesFile != "" {
+		for _, s := range cl.DhtServers() {
+			if w, ok := s.(torrent.AnacrolixDhtServerWrapper); ok {
+				w.Server.AddNodesFromFile(o.DHTNodesFile) // missing file on first start is fine
+			}
+		}
+	}
+	return e, nil
 }
 
 func (e *engine) Add(b []byte) (_ Torrent, isNew bool, err error) {
@@ -247,7 +276,20 @@ func (e *engine) Get(infohash string) (Torrent, bool) {
 
 func (e *engine) Port() int { return e.cl.LocalPort() }
 
-func (e *engine) Close() error { return errors.Join(e.cl.Close()...) }
+// Close saves the DHT routing table (if configured) and stops the client.
+func (e *engine) Close() error {
+	var errs []error
+	if e.nodesFile != "" {
+		for _, s := range e.cl.DhtServers() {
+			if w, ok := s.(torrent.AnacrolixDhtServerWrapper); ok {
+				if ns := w.Server.Nodes(); len(ns) > 0 {
+					errs = append(errs, dht.WriteNodesToFile(ns, e.nodesFile))
+				}
+			}
+		}
+	}
+	return errors.Join(append(errs, e.cl.Close()...)...)
+}
 
 type tor struct {
 	t       *torrent.Torrent
@@ -518,3 +560,9 @@ func (t *tor) Trackers() [][]string {
 }
 
 func (t *tor) SetTrackers(tiers [][]string) { t.t.ModifyTrackers(tiers) }
+
+// Private reports the BEP 27 private flag. Unknown until metadata arrives (false).
+func (t *tor) Private() bool {
+	info := t.t.Info()
+	return info != nil && info.Private != nil && *info.Private
+}

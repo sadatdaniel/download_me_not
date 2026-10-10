@@ -58,7 +58,7 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd())
 	for name, ms := range map[string]string{
 		"copy": "M3", "formats": "M3",
 		"cookies": "M3", "update": "M3", "pair": "M3", "uninstall": "M3",
@@ -145,7 +145,8 @@ func serveCmd() *cobra.Command {
 		jm := jobs.New(jobs.Options{DB: db, Downloads: cfg.Paths.Downloads, Client: netguard.Client(), Allowed: reg.Enabled,
 			Connections: setting(cfg, "web", "connections", 16), Limiter: lim.Down,
 			MaxActive: cfg.Jobs.MaxActive, DiskReserve: cfg.Jobs.Reserve,
-			Post: jobs.Post{Extract: cfg.Jobs.Extract, DeleteArchive: cfg.Jobs.DeleteArchive},
+			Post:          jobs.Post{Extract: cfg.Jobs.Extract, DeleteArchive: cfg.Jobs.DeleteArchive},
+			LearnTrackers: settingBool(cfg, "torrent", "learnTrackers", true),
 			Seed: jobs.SeedPolicy{Policy: settingStr(cfg, "torrent", "seed", "stop"),
 				Ratio: settingFloat(cfg, "torrent", "seedRatio", 1), Minutes: setting(cfg, "torrent", "seedMinutes", 60)},
 			NewEngine: func() (engine.Engine, error) { return newEngine(cfg, lim) }})
@@ -198,6 +199,7 @@ func newEngine(cfg *config.Config, lim *limits.Limits) (engine.Engine, error) {
 		Encryption: settingStr(cfg, "torrent", "encryption", "prefer"), MaxPeers: setting(cfg, "torrent", "maxPeers", 0),
 		Anonymous:   settingBool(cfg, "torrent", "anonymous", false),
 		DownLimiter: lim.Down, UpLimiter: lim.Up, Blocklist: bl, Control: netguard.Safe,
+		DHTNodesFile: filepath.Join(cfg.Paths.Data, "dht-nodes.dat"),
 	})
 }
 
@@ -904,6 +906,28 @@ func filesCmd() *cobra.Command {
 					pct = 100 * float64(f.Completed) / float64(f.Length)
 				}
 				rows = append(rows, []string{fmt.Sprint(i), fmt.Sprintf("%.0f%%", pct), fmt.Sprint(f.Length), f.Path})
+			}
+			table(rows)
+		})
+	}
+	return c
+}
+
+func learnedCmd() *cobra.Command {
+	c := &cobra.Command{Use: "learned", Short: "Swarm memory: trackers remembered from completed public torrents"}
+	forget := c.Flags().Bool("forget", false, "forget them all")
+	c.RunE = func(*cobra.Command, []string) error {
+		if *forget {
+			return call("DELETE", "/v1/swarm/trackers", nil, nil)
+		}
+		var ts []store.LearnedTracker
+		if err := call("GET", "/v1/swarm/trackers", nil, &ts); err != nil {
+			return err
+		}
+		return show(ts, func() {
+			rows := [][]string{{"WORKED", "FAILED", "LAST OK", "TRACKER"}}
+			for _, t := range ts {
+				rows = append(rows, []string{fmt.Sprint(t.Success), fmt.Sprint(t.Failure), time.Unix(t.LastOK, 0).Format(time.DateOnly), t.URL})
 			}
 			table(rows)
 		})

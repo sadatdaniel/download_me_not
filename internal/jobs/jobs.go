@@ -45,6 +45,7 @@ type Options struct {
 	DiskReserve     int64                           // keep this much free in the download folder; default 1 GiB
 	FreeSpace       func(dir string) (int64, error) // tests override; default statfs
 	Post            Post                            // default post-completion steps
+	LearnTrackers   bool                            // swarm memory: remember good trackers, add them to new public torrents
 }
 
 var (
@@ -335,6 +336,12 @@ func (m *Manager) Run(ctx context.Context) error {
 }
 
 func (m *Manager) reconcile(ctx context.Context) error {
+	free, ferr := m.o.FreeSpace(m.o.Downloads)
+	lowDisk := ferr == nil && free < m.o.DiskReserve
+	// Read jobs under the lock: finish() records a runner's final state under the same lock, so a
+	// runner that just ended can't look like "running but missing" and be started twice.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	jobs, err := store.ListJobs(m.o.DB)
 	if err != nil {
 		return err
@@ -346,10 +353,6 @@ func (m *Manager) reconcile(ctx context.Context) error {
 		}
 		return int(a.Created - b.Created)
 	})
-	free, ferr := m.o.FreeSpace(m.o.Downloads)
-	lowDisk := ferr == nil && free < m.o.DiskReserve
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	active := 0
 	for _, r := range m.run {
 		r.mu.Lock()
@@ -430,9 +433,11 @@ func (m *Manager) finish(ctx context.Context, id string, err error) {
 		reason = r.reason
 		r.mu.Unlock()
 	}
+	// The runner is removed and its final state written under one lock hold (see reconcile).
+	defer m.poke()
+	defer m.mu.Unlock()
 	delete(m.run, id)
 	delete(m.last, id)
-	m.mu.Unlock()
 	j, gerr := m.get(id)
 	if gerr != nil {
 		return // cancelled and deleted
@@ -452,7 +457,6 @@ func (m *Manager) finish(ctx context.Context, id string, err error) {
 		f["state"], f["error"] = "failed", err.Error()
 	}
 	store.SetJob(m.o.DB, id, f)
-	m.poke()
 }
 
 func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
@@ -601,6 +605,10 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 	for _, f := range t.Files() {
 		total += f.Length
 	}
+	ownTrackers := t.Trackers() // before adding learned ones, so only real results get recorded
+	if m.o.LearnTrackers && !t.Private() {
+		m.addLearnedTrackers(t)
+	}
 	f := map[string]any{"name": t.Name(), "path": t.Name(), "total": total}
 	if meta.Started {
 		store.SetJob(m.o.DB, j.ID, map[string]any{"state": "checking"})
@@ -632,6 +640,9 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 			var paths []string
 			for _, f := range t.Files() {
 				paths = append(paths, f.Path)
+			}
+			if m.o.LearnTrackers && !t.Private() {
+				store.LearnTrackers(m.o.DB, publicTrackers(ownTrackers), true)
 			}
 			del := m.postProcess(ctx, r, j.ID, meta.Post, paths)
 			err := m.seed(ctx, r, j.ID, t, total, meta.Seed)

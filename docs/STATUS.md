@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** M2.5 swarm memory (see the checklist). Engine facts for M2: no runtime blocklist setter (use our own Ranger), no SOCKS5 in the library (AddDialer + DialForPeerConns=false), limiters can change at runtime.
+**Next action:** M2.6 kill switch, SOCKS5, UPnP opt-in, stream first/last pieces, blocklist URL refresh (see the checklist). Engine facts for M2: no runtime blocklist setter (use our own Ranger), no SOCKS5 in the library (AddDialer + DialForPeerConns=false), limiters can change at runtime.
 **Blockers:** none.
 
 ## Checklist
@@ -49,10 +49,10 @@
   - [x] M2.2 views: peers (address, client, progress, rates, encrypted), piece map, availability, trackers (list, add, remove), a plain-language "why slow/stalled" hint; API plus CLI peers, pieces, trackers, recheck
   - [x] M2.3 seeding policy (stop, ratio, time, forever), disk-space guard (check before start, poll, pause with reason), queue priority and reordering
   - [x] M2.4 post-completion: archive extraction (mholt/archives on os.Root, size and ratio limits, skip encrypted), optional delete of the archive
-  - [ ] M2.5 swarm memory (below)
+  - [x] M2.5 swarm memory (below)
   - [ ] M2.6 kill switch (pause when the bound interface goes down), SOCKS5 dialer (ours: AddDialer plus x/net/proxy), UPnP opt-in, stream mode first/last pieces, blocklist from URL on a schedule
   - [ ] M2.7 isolated multi-container swarm with netem; private DHT; IPv6
-- [ ] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API
+- [x] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API
 - [ ] M3 integrations: yt-dlp, rclone and Drive (device flow, `drive.file`), CertMagic, install.sh, self-update, `pair`
 - [ ] M4 Android app (Kotlin + Compose + DocumentsProvider proposed)
 - [ ] M5 browser extension (proposed): send downloads with cookies and headers, media sniffer

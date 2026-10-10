@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -142,5 +143,27 @@ func TestBlocklistSwap(t *testing.T) {
 	bl.Load(strings.NewReader(""))
 	if _, ok := bl.Lookup(net.ParseIP("127.0.0.7")); ok {
 		t.Fatal("still blocked after swapping in an empty list")
+	}
+}
+
+// Two engines with a private two-node DHT on loopback (no public routers): the routing table is
+// saved on Close and reloaded on the next start.
+func TestDHTNodesPersist(t *testing.T) {
+	dir := t.TempDir()
+	a, err := New(Options{DataDir: t.TempDir(), ListenHost: "127.0.0.1", DHTBootstrap: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	nodes := filepath.Join(dir, "dht.dat")
+	b, err := New(Options{DataDir: t.TempDir(), ListenHost: "127.0.0.1", DHTNodesFile: nodes,
+		DHTBootstrap: []string{fmt.Sprintf("127.0.0.1:%d", a.Port())}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Second) // bootstrap against a
+	b.Close()
+	if fi, err := os.Stat(nodes); err != nil || fi.Size() == 0 {
+		t.Fatalf("nodes file not written: %v", err)
 	}
 }

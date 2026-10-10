@@ -277,6 +277,16 @@ func (s *server) routes(api huma.API) {
 			return nil, config.Set(s.CfgPath, "limits.up", in.Body.Up)
 		})
 
+	huma.Register(api, op("learned-trackers", "GET", "/v1/swarm/trackers", "read", "Swarm memory: trackers remembered from completed public torrents"),
+		func(ctx context.Context, _ *struct{}) (*struct{ Body []store.LearnedTracker }, error) {
+			ts, err := store.TopTrackers(s.DB, 100)
+			return body(ts), err
+		})
+	huma.Register(api, op("forget-trackers", "DELETE", "/v1/swarm/trackers", "admin", "Forget all remembered trackers"),
+		func(ctx context.Context, _ *struct{}) (*struct{}, error) {
+			return nil, store.ForgetTrackers(s.DB)
+		})
+
 	huma.Register(api, op("doctor", "GET", "/v1/doctor", "read", "Helper tools present or missing"),
 		func(ctx context.Context, _ *struct{}) (*struct{ Body []tools.Tool }, error) {
 			return body(tools.Doctor(s.Cfg.Paths.Data)), nil

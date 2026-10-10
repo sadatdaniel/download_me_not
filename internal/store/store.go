@@ -191,3 +191,52 @@ func DeleteJob(db *sql.DB, id string) error {
 	_, err := db.Exec(`DELETE FROM jobs WHERE id = ?`, id)
 	return err
 }
+
+type LearnedTracker struct {
+	URL     string `json:"url"`
+	Success int    `json:"success"`
+	Failure int    `json:"failure"`
+	LastOK  int64  `json:"lastOk"`
+}
+
+// LearnTrackers records the outcome of a public torrent for each of its tracker URLs.
+func LearnTrackers(db *sql.DB, urls []string, ok bool) error {
+	now := time.Now().Unix()
+	for _, u := range urls {
+		s, f, last := 0, 1, int64(0)
+		if ok {
+			s, f, last = 1, 0, now
+		}
+		if _, err := db.Exec(`INSERT INTO learned_trackers (url, success, failure, last_ok, created) VALUES (?,?,?,?,?)
+			ON CONFLICT(url) DO UPDATE SET success = success + ?, failure = failure + ?, last_ok = max(last_ok, ?)`,
+			u, s, f, last, now, s, f, last); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// TopTrackers returns the best learned trackers: worked within 90 days, more successes than failures.
+func TopTrackers(db *sql.DB, n int) ([]LearnedTracker, error) {
+	rows, err := db.Query(`SELECT url, success, failure, last_ok FROM learned_trackers
+		WHERE success > failure AND last_ok > ? ORDER BY success - failure DESC, last_ok DESC LIMIT ?`,
+		time.Now().Add(-90*24*time.Hour).Unix(), n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []LearnedTracker{}
+	for rows.Next() {
+		var t LearnedTracker
+		if err := rows.Scan(&t.URL, &t.Success, &t.Failure, &t.LastOK); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func ForgetTrackers(db *sql.DB) error {
+	_, err := db.Exec(`DELETE FROM learned_trackers`)
+	return err
+}

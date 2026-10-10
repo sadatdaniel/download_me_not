@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -205,5 +206,57 @@ func (m *Manager) removeFiles(rels []string) {
 	defer root.Close()
 	for _, rel := range rels {
 		root.Remove(rel)
+	}
+}
+
+// publicTrackers keeps plain announce URLs only. Anything with a query, credentials or a long
+// path token may carry a private passkey and is never stored.
+func publicTrackers(tiers [][]string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, tier := range tiers {
+		for _, s := range tier {
+			u, err := url.Parse(s)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "udp") ||
+				u.RawQuery != "" || u.User != nil || len(s) > 120 {
+				continue
+			}
+			ok := true
+			for _, seg := range strings.Split(u.Path, "/") {
+				if len(seg) >= 20 { // passkey-like path segment, e.g. /a1b2c3.../announce
+					ok = false
+				}
+			}
+			if ok && !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// addLearnedTrackers appends the best remembered trackers, one tier each, to a public torrent.
+func (m *Manager) addLearnedTrackers(t engine.Torrent) {
+	top, err := store.TopTrackers(m.o.DB, 10)
+	if err != nil || len(top) == 0 {
+		return
+	}
+	tiers := t.Trackers()
+	have := map[string]bool{}
+	for _, tier := range tiers {
+		for _, u := range tier {
+			have[u] = true
+		}
+	}
+	added := false
+	for _, lt := range top {
+		if !have[lt.URL] {
+			tiers = append(tiers, []string{lt.URL})
+			added = true
+		}
+	}
+	if added {
+		t.SetTrackers(tiers)
 	}
 }

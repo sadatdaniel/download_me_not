@@ -379,3 +379,38 @@ func TestUnpackAfterDownload(t *testing.T) {
 		t.Fatal("archive not deleted")
 	}
 }
+
+func TestPublicTrackers(t *testing.T) {
+	got := publicTrackers([][]string{
+		{"udp://tracker.example:1337/announce", "http://t.example/announce", "udp://tracker.example:1337/announce"},
+		{"https://private.example/announce?passkey=abc", "https://user:pw@t.example/announce"},
+		{"https://private.example/0123456789abcdef0123456789abcdef/announce", "file:///etc/passwd"},
+	})
+	if len(got) != 2 || got[0] != "udp://tracker.example:1337/announce" {
+		t.Fatalf("%v", got)
+	}
+}
+
+func TestSwarmMemoryLearns(t *testing.T) {
+	tb, _ := swarmFixture(t)
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "j.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	m := New(Options{DB: db, Downloads: dir, Client: http.DefaultClient, Tick: 20 * time.Millisecond, LearnTrackers: true,
+		NewEngine: func() (engine.Engine, error) {
+			return engine.New(engine.Options{DataDir: dir, ListenHost: "127.0.0.1", NoDHT: true, NoPEX: true})
+		}})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- m.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	j, _, _ := m.Add(AddRequest{Torrent: tb})
+	waitState(t, m, j.ID, "done", 20*time.Second)
+	top, _ := store.TopTrackers(db, 10)
+	if len(top) != 1 || !strings.HasSuffix(top[0].URL, "/announce") || top[0].Success != 1 {
+		t.Fatalf("learned: %+v", top)
+	}
+}
