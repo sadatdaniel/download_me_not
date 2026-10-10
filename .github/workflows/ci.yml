@@ -15,7 +15,8 @@ jobs:
       - uses: dominikh/staticcheck-action@v1
         with: { install-go: false }
       # Tests never touch the public network (loopback peers, DHT off), same as locally.
-      - run: CGO_ENABLED=1 go test -race -count=1 ./...
+      # spike/ is a manual evidence suite (timing-sensitive under -race on small runners)
+      - run: CGO_ENABLED=1 go test -race -count=1 $(go list ./... | grep -v /spike/)
       - name: static cross-build
         run: |
           for a in amd64 arm64 arm; do CGO_ENABLED=0 GOARCH=$a GOARM=7 go build -o /tmp/dmn-$a ./cmd/dmn; done
