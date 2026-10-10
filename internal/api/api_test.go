@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
@@ -183,5 +184,17 @@ func TestCookieValuesNeverReturned(t *testing.T) {
 	code, b := call(t, srv, "GET", "/v1/cookies", "read-tok", "")
 	if code != 200 || !strings.Contains(b, "example.com") || strings.Contains(b, "SECRETVALUE") {
 		t.Fatalf("%d %s", code, b)
+	}
+}
+
+func TestTokenAddedWhileRunning(t *testing.T) {
+	srv, cfgPath := newTestServer(t)
+	if code, _ := call(t, srv, "GET", "/v1/jobs", "new-tok", ""); code != 401 {
+		t.Fatalf("unknown token: %d", code)
+	}
+	time.Sleep(1100 * time.Millisecond) // reload is rate-limited to once a second
+	config.Set(cfgPath, "auth.tokens", []map[string]any{{"name": "phone", "hash": HashToken("new-tok"), "scope": "read"}})
+	if code, _ := call(t, srv, "GET", "/v1/jobs", "new-tok", ""); code != 200 {
+		t.Fatalf("token added by pair not picked up: %d", code)
 	}
 }

@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** M3.3 Google Drive. Needs the user's own Google Cloud OAuth client ID ("TV and Limited Input devices" type, drive.file scope); ask before starting the Google side, but rclone plumbing and a fake OAuth server test can come first.
+**Next action:** M3.4b ACME (see the checklist). M3.3 Google Drive is waiting for the user's Google Cloud OAuth client ID ("TVs and Limited Input devices" type).
 **Blockers:** none.
 
 ## Checklist
@@ -57,7 +57,8 @@
   - [x] M3.1 video provider (managed install and self-update of yt-dlp moved to M3.5): probe (`-J`) to formats and presets, download as a job with progress, all traffic through the netguard proxy, `formats` CLI. Tests: yt-dlp's generic extractor on a local page with our own ffmpeg-made video. **Never YouTube from the dev machine**
   - [x] M3.2 cookies: import a Netscape cookie file per domain, AES-GCM at rest (key file 0600 in the config dir), passed to yt-dlp and httpdl, never logged or returned
   - [ ] M3.3 Google Drive: rclone as a managed tool; OAuth device flow with the drive.file scope (needs the user's own Google Cloud client ID); copy-to-drive jobs; verify; optional delete-local
-  - [ ] M3.4 HTTPS: self-signed with a fingerprint, CertMagic for domains (Pebble for local tests), `pair` QR (URL, token, fingerprint)
+  - [x] M3.4 HTTPS: server.tls auto|off|self-signed, fingerprint pinning (app and CLI --fingerprint), live token reload, `pair` QR (URL, new device token, fingerprint)
+  - [ ] M3.4b ACME: CertMagic for domains (HTTP-01/TLS-ALPN, DNS-01 via libdns cloudflare/duckdns), Pebble for local tests, `doctor` port and expiry checks
   - [ ] M3.5 install.sh, systemd unit, uninstall; self-update (go-selfupdate, ECDSA, confirm-after-boot); managed tool updates; public releases repo
 - [ ] M4 Android app (Kotlin + Compose + DocumentsProvider proposed)
 - [ ] M5 browser extension (proposed): send downloads with cookies and headers, media sniffer

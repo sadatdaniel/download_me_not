@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/sadatdaniel/download_me_not/internal/engine"
@@ -40,5 +41,17 @@ func TestParseSeed(t *testing.T) {
 		if _, err := parseSeed(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+func TestPairPayload(t *testing.T) {
+	p := pairPayload("https://192.168.1.5:8080", "dmn_abc", "ff00")
+	u, err := url.Parse(p)
+	if err != nil || u.Scheme != "dmn" || u.Query().Get("token") != "dmn_abc" || u.Query().Get("fp") != "ff00" ||
+		u.Query().Get("url") != "https://192.168.1.5:8080" {
+		t.Fatalf("%s %v", p, err)
+	}
+	if got := lanAddr("10.0.0.2:8080"); got != "10.0.0.2:8080" {
+		t.Fatalf("specific host changed: %s", got)
 	}
 }

@@ -23,6 +23,10 @@ import (
 type Config struct {
 	Server struct {
 		Listen string `koanf:"listen"`
+		// TLS: auto (off on loopback, else self-signed), off (behind a proxy, tunnel or VPN), self-signed (LAN,
+		// app pins the fingerprint), acme (domain with automatic certificates).
+		TLS    string `koanf:"tls"`
+		Domain string `koanf:"domain"`
 	} `koanf:"server"`
 	Paths struct {
 		Data      string `koanf:"data"`
@@ -81,6 +85,7 @@ func defaults() map[string]any {
 	home, _ := os.UserHomeDir()
 	return map[string]any{
 		"server.listen":   "127.0.0.1:8080",
+		"server.tls":      "auto",
 		"paths.data":      filepath.Join(home, ".local", "share", "dmn"),
 		"paths.downloads": filepath.Join(home, "Downloads", "dmn"),
 	}

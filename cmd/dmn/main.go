@@ -7,7 +7,11 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +30,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/sadatdaniel/download_me_not/internal/api"
@@ -39,6 +44,7 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/provider"
 	"github.com/sadatdaniel/download_me_not/internal/selftest"
 	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/download_me_not/internal/tlsutil"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
 	"github.com/sadatdaniel/download_me_not/internal/video"
 )
@@ -50,6 +56,7 @@ var (
 	jsonOut  bool
 	srvURL   string
 	srvToken string
+	srvFP    string
 )
 
 func main() {
@@ -59,13 +66,14 @@ func main() {
 	pf.BoolVar(&jsonOut, "json", false, "JSON output for scripting")
 	pf.StringVar(&srvURL, "url", envOr("DMN_URL", "http://127.0.0.1:8080"), "server URL (env DMN_URL)")
 	pf.StringVar(&srvToken, "token", os.Getenv("DMN_TOKEN"), "API token (env DMN_TOKEN)")
+	pf.StringVar(&srvFP, "fingerprint", os.Getenv("DMN_FINGERPRINT"), "pin a self-signed server certificate by SHA-256 (env DMN_FINGERPRINT; shown by `dmn pair`)")
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd())
 	for name, ms := range map[string]string{
 		"copy":   "M3",
-		"update": "M3", "pair": "M3", "uninstall": "M3",
+		"update": "M3", "uninstall": "M3",
 	} {
 		root.AddCommand(&cobra.Command{Use: name, Short: "(not implemented yet: " + ms + ")",
 			DisableFlagParsing: true,
@@ -178,13 +186,39 @@ func serveCmd() *cobra.Command {
 			srv.Shutdown(sctx)
 		}()
 		defer func() { stop(); <-jobsDone }() // runners save their resume state before the DB closes
-		fmt.Fprintf(os.Stderr, "dmn %s listening on %s, downloads in %s\n", version, cfg.Server.Listen, cfg.Paths.Downloads)
-		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			return err
+		mode := tlsMode(cfg)
+		fmt.Fprintf(os.Stderr, "dmn %s listening on %s (tls: %s), downloads in %s\n", version, cfg.Server.Listen, mode, cfg.Paths.Downloads)
+		switch mode {
+		case "self-signed":
+			cert, err := tlsutil.SelfSigned(filepath.Join(cfg.Paths.Data, "tls"))
+			if err != nil {
+				return err
+			}
+			srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+			if err := srv.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
+		case "off":
+			if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
+		default:
+			return fmt.Errorf("server.tls %q: use auto, off or self-signed (acme comes with M3.4b)", mode)
 		}
 		return nil
 	}
 	return c
+}
+
+// tlsMode resolves "auto": plain HTTP on loopback (local CLI, reverse proxy), self-signed otherwise.
+func tlsMode(cfg *config.Config) string {
+	if cfg.Server.TLS == "" || cfg.Server.TLS == "auto" {
+		if loopback(cfg.Server.Listen) {
+			return "off"
+		}
+		return "self-signed"
+	}
+	return cfg.Server.TLS
 }
 
 // killSwitch returns a gate that closes while the bound interface (e.g. wg0) is down or has no
@@ -368,15 +402,8 @@ func setupCmd() *cobra.Command {
 				return err
 			}
 		}
-		tok := randomToken("dmn_")
-		toks := []map[string]any{}
-		for _, t := range cfg.Auth.Tokens {
-			if t.Name != *name { // re-running replaces the token with the same name
-				toks = append(toks, map[string]any{"name": t.Name, "hash": t.Hash, "scope": t.Scope})
-			}
-		}
-		toks = append(toks, map[string]any{"name": *name, "hash": api.HashToken(tok), "scope": *scope})
-		if err := config.Set(cfgPath, "auth.tokens", toks); err != nil {
+		tok, err := addToken(cfg, *name, *scope)
+		if err != nil {
 			return err
 		}
 		return show(map[string]string{"config": cfgPath, "name": *name, "scope": *scope, "token": tok}, func() {
@@ -514,7 +541,7 @@ func call(method, path string, in, out any) error {
 	if srvToken != "" {
 		req.Header.Set("Authorization", "Bearer "+srvToken)
 	}
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	resp, err := httpClient(30 * time.Second).Do(req)
 	if err != nil {
 		return err
 	}
@@ -620,7 +647,7 @@ func zipCmd() *cobra.Command {
 			return err
 		}
 		req.Header.Set("Authorization", "Bearer "+srvToken)
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := httpClient(0).Do(req)
 		if err != nil {
 			return err
 		}
@@ -1112,5 +1139,127 @@ func cookiesCmd() *cobra.Command {
 		return call("DELETE", "/v1/cookies/"+url.PathEscape(a[0]), nil, nil)
 	}}
 	c.AddCommand(imp, list, rm)
+	return c
+}
+
+// addToken creates a token, stores only its hash, and returns it. A token with the same name is
+// replaced, so re-running setup or pair for the same device revokes the old token.
+func addToken(cfg *config.Config, name, scope string) (string, error) {
+	if scope != "read" && scope != "write" && scope != "admin" {
+		return "", fmt.Errorf("scope must be read, write or admin")
+	}
+	tok := randomToken("dmn_")
+	toks := []map[string]any{}
+	for _, t := range cfg.Auth.Tokens {
+		if t.Name != name {
+			toks = append(toks, map[string]any{"name": t.Name, "hash": t.Hash, "scope": t.Scope})
+		}
+	}
+	toks = append(toks, map[string]any{"name": name, "hash": api.HashToken(tok), "scope": scope})
+	return tok, config.Set(cfgPath, "auth.tokens", toks)
+}
+
+// lanAddr picks the address a phone on the same network can reach: the listen host when it is
+// specific, else the first private IPv4 of an interface that is up.
+func lanAddr(listen string) string {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return listen
+	}
+	if ip := net.ParseIP(host); host != "" && (ip == nil || !ip.IsUnspecified()) {
+		return listen
+	}
+	ifs, _ := net.Interfaces()
+	for _, ifc := range ifs {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := ifc.Addrs()
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil && ipn.IP.IsPrivate() {
+				return net.JoinHostPort(ipn.IP.String(), port)
+			}
+		}
+	}
+	return listen
+}
+
+// pairPayload is what the QR code carries: where the server is, a fresh token for this device and
+// the certificate fingerprint to pin.
+func pairPayload(serverURL, token, fingerprint string) string {
+	v := url.Values{"v": {"1"}, "url": {serverURL}, "token": {token}}
+	if fingerprint != "" {
+		v.Set("fp", fingerprint)
+	}
+	return "dmn://pair?" + v.Encode()
+}
+
+func pairCmd() *cobra.Command {
+	c := &cobra.Command{Use: "pair", Short: "Show a QR code that connects the Android app (new token, URL, certificate fingerprint)"}
+	name := c.Flags().String("name", "phone", "device name; pairing again with the same name replaces its token")
+	scope := c.Flags().String("scope", "write", "token scope for the device: read, write or admin")
+	override := c.Flags().String("url", "", "server URL as the phone sees it (default: this machine's LAN address)")
+	c.RunE = func(*cobra.Command, []string) error {
+		_, cfg, err := config.Load(cfgPath, nil)
+		if err != nil {
+			return err
+		}
+		mode := tlsMode(cfg)
+		scheme, fp := "https", ""
+		switch mode {
+		case "off":
+			scheme = "http"
+		case "self-signed":
+			cert, err := tlsutil.SelfSigned(filepath.Join(cfg.Paths.Data, "tls"))
+			if err != nil {
+				return err
+			}
+			fp, _ = tlsutil.Fingerprint(cert)
+		}
+		u := *override
+		if u == "" {
+			host := lanAddr(cfg.Server.Listen)
+			if mode == "acme" && cfg.Server.Domain != "" {
+				host = cfg.Server.Domain
+			}
+			u = scheme + "://" + host
+		}
+		tok, err := addToken(cfg, *name, *scope)
+		if err != nil {
+			return err
+		}
+		payload := pairPayload(u, tok, fp)
+		return show(map[string]string{"payload": payload, "url": u, "fingerprint": fp}, func() {
+			qrterminal.GenerateHalfBlock(payload, qrterminal.L, os.Stdout)
+			fmt.Printf("\nScan with the app. Server %s, device %q (%s).\n", u, *name, *scope)
+			if fp != "" {
+				fmt.Printf("Certificate fingerprint (SHA-256): %s\n", fp)
+			}
+			if mode == "off" && !loopback(cfg.Server.Listen) {
+				fmt.Println("Warning: TLS is off. Only do this behind a reverse proxy, tunnel or VPN.")
+			}
+		})
+	}
+	return c
+}
+
+// httpClient talks to the server; with --fingerprint it accepts exactly that certificate (the same
+// pinning the app does), otherwise normal TLS verification applies.
+func httpClient(timeout time.Duration) *http.Client {
+	c := &http.Client{Timeout: timeout}
+	if srvFP != "" {
+		want := strings.ToLower(strings.ReplaceAll(srvFP, ":", ""))
+		c.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true,
+			VerifyPeerCertificate: func(raw [][]byte, _ [][]*x509.Certificate) error {
+				if len(raw) == 0 {
+					return errors.New("no certificate")
+				}
+				sum := sha256.Sum256(raw[0])
+				if hex.EncodeToString(sum[:]) != want {
+					return errors.New("server certificate does not match --fingerprint")
+				}
+				return nil
+			}}}
+	}
 	return c
 }

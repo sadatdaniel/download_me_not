@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -53,7 +54,10 @@ func HashToken(tok string) string {
 
 type server struct {
 	Deps
-	tokens map[string]string // token hash → scope
+	mu       sync.Mutex
+	tokens   map[string]string // token hash → scope
+	cfgMtime time.Time
+	checked  time.Time
 }
 
 func (s *server) scope(authz string) string {
@@ -61,15 +65,40 @@ func (s *server) scope(authz string) string {
 	if !ok || tok == "" {
 		return ""
 	}
-	return s.tokens[HashToken(tok)] // map lookup on a hash: no timing leak of the token itself
+	h := HashToken(tok) // map lookup on a hash: no timing leak of the token itself
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sc, ok := s.tokens[h]; ok {
+		return sc
+	}
+	// Unknown token: maybe `dmn pair` or `dmn setup` just added it. Reload when the config file
+	// changed, at most once a second, so new devices work without a restart.
+	if time.Since(s.checked) > time.Second {
+		s.checked = time.Now()
+		if fi, err := os.Stat(s.CfgPath); err == nil && fi.ModTime().After(s.cfgMtime) {
+			if _, c, err := config.Load(s.CfgPath, nil); err == nil {
+				s.cfgMtime = fi.ModTime()
+				s.setTokens(c.Auth.Tokens)
+			}
+		}
+	}
+	return s.tokens[h]
 }
 
-func New(d Deps) (http.Handler, huma.API) {
-	s := &server{Deps: d, tokens: map[string]string{}}
-	for _, t := range d.Cfg.Auth.Tokens {
+func (s *server) setTokens(ts []config.Token) {
+	s.tokens = map[string]string{}
+	for _, t := range ts {
 		if rank[t.Scope] > 0 {
 			s.tokens[t.Hash] = t.Scope
 		}
+	}
+}
+
+func New(d Deps) (http.Handler, huma.API) {
+	s := &server{Deps: d}
+	s.setTokens(d.Cfg.Auth.Tokens)
+	if fi, err := os.Stat(d.CfgPath); err == nil {
+		s.cfgMtime = fi.ModTime()
 	}
 	mux := http.NewServeMux()
 	cfg := huma.DefaultConfig("download_me_not", d.Version)
