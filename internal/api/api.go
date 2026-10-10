@@ -1,0 +1,273 @@
+// Package api is the versioned HTTP API. It is the only interface: the CLI, web UI and
+// Android app are all clients (scope §4.1). The OpenAPI spec is generated from these handlers
+// at /openapi.json; /v1 changes must be additive (docs/architecture.md).
+package api
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"io/fs"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"github.com/danielgtaylor/huma/v2/sse"
+
+	"github.com/sadatdaniel/download_me_not/internal/config"
+	"github.com/sadatdaniel/download_me_not/internal/fsapi"
+	"github.com/sadatdaniel/download_me_not/internal/provider"
+	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/download_me_not/internal/tools"
+)
+
+type Deps struct {
+	Version   string
+	Cfg       *config.Config
+	CfgPath   string
+	DB        *sql.DB
+	FS        *fsapi.FS
+	Providers *provider.Registry
+}
+
+var rank = map[string]int{"read": 1, "write": 2, "admin": 3}
+
+// HashToken is how tokens are stored in the config file.
+func HashToken(tok string) string {
+	h := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(h[:])
+}
+
+type server struct {
+	Deps
+	tokens map[string]string // token hash → scope
+}
+
+func (s *server) scope(authz string) string {
+	tok, ok := strings.CutPrefix(authz, "Bearer ")
+	if !ok || tok == "" {
+		return ""
+	}
+	return s.tokens[HashToken(tok)] // map lookup on a hash: no timing leak of the token itself
+}
+
+func New(d Deps) (http.Handler, huma.API) {
+	s := &server{Deps: d, tokens: map[string]string{}}
+	for _, t := range d.Cfg.Auth.Tokens {
+		if rank[t.Scope] > 0 {
+			s.tokens[t.Hash] = t.Scope
+		}
+	}
+	mux := http.NewServeMux()
+	cfg := huma.DefaultConfig("download_me_not", d.Version)
+	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{"bearer": {Type: "http", Scheme: "bearer"}}
+	api := humago.New(mux, cfg)
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		need := ""
+		for _, sec := range ctx.Operation().Security {
+			if sc := sec["bearer"]; len(sc) > 0 {
+				need = sc[0]
+			}
+		}
+		if need == "" {
+			next(ctx)
+			return
+		}
+		have := s.scope(ctx.Header("Authorization"))
+		switch {
+		case have == "":
+			huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing or invalid token")
+		case rank[have] < rank[need]:
+			huma.WriteErr(api, ctx, http.StatusForbidden, "this token has scope "+have+"; "+need+" is required")
+		default:
+			next(ctx)
+		}
+	})
+	s.routes(api)
+	mux.HandleFunc("GET /v1/raw/{path...}", s.raw)
+	return mux, api
+}
+
+func op(id, method, path, scope, summary string) huma.Operation {
+	o := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary}
+	if scope != "" {
+		o.Security = []map[string][]string{{"bearer": {scope}}}
+	}
+	return o
+}
+
+func fsErr(err error) error {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return huma.Error404NotFound("not found")
+	case errors.Is(err, fs.ErrExist):
+		return huma.Error409Conflict("already exists")
+	default:
+		return huma.Error400BadRequest(err.Error())
+	}
+}
+
+type pathIn struct {
+	Path string `query:"path" default:"/" doc:"Path inside the download folder"`
+}
+
+func body[T any](v T) *struct{ Body T } { return &struct{ Body T }{v} }
+
+func (s *server) routes(api huma.API) {
+	huma.Register(api, op("health", "GET", "/v1/health", "", "Liveness and version"),
+		func(ctx context.Context, _ *struct{}) (*struct{ Body map[string]string }, error) {
+			return body(map[string]string{"status": "ok", "version": s.Version}), nil
+		})
+
+	huma.Register(api, op("list-jobs", "GET", "/v1/jobs", "read", "List downloads"),
+		func(ctx context.Context, _ *struct{}) (*struct{ Body []store.Job }, error) {
+			jobs, err := store.ListJobs(s.DB)
+			return body(jobs), err
+		})
+	huma.Register(api, op("add-job", "POST", "/v1/jobs", "write", "Add a download (URL, video page, magnet or .torrent)"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				Source string `json:"source" minLength:"1"`
+				Mode   string `json:"mode,omitempty" enum:"standard,stream" default:"standard"`
+			}
+		}) (*struct{ Body store.Job }, error) {
+			return nil, huma.NewError(http.StatusNotImplemented, "adding downloads arrives in milestone M1")
+		})
+
+	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress (server-sent events)"),
+		map[string]any{"ping": ping{}},
+		func(ctx context.Context, _ *struct{}, send sse.Sender) {
+			t := time.NewTicker(15 * time.Second) // keeps proxies and phones from dropping idle streams
+			defer t.Stop()
+			for {
+				if send.Data(ping{Time: time.Now().Unix()}) != nil {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+				}
+			}
+		})
+
+	huma.Register(api, op("fs-list", "GET", "/v1/fs", "read", "List a folder"),
+		func(ctx context.Context, in *pathIn) (*struct{ Body []fsapi.Entry }, error) {
+			es, err := s.FS.List(in.Path)
+			if err != nil {
+				return nil, fsErr(err)
+			}
+			return body(es), nil
+		})
+	huma.Register(api, op("fs-stat", "GET", "/v1/fs/stat", "read", "Inspect one entry"),
+		func(ctx context.Context, in *pathIn) (*struct{ Body fsapi.Entry }, error) {
+			e, err := s.FS.Stat(in.Path)
+			if err != nil {
+				return nil, fsErr(err)
+			}
+			return body(e), nil
+		})
+	huma.Register(api, op("fs-usage", "GET", "/v1/fs/usage", "read", "Disk usage and free space"),
+		func(ctx context.Context, _ *struct{}) (*struct{ Body fsapi.Usage }, error) {
+			u, err := s.FS.Usage()
+			return body(u), err
+		})
+	huma.Register(api, op("fs-mkdir", "POST", "/v1/fs/mkdir", "write", "Create a folder"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				Path string `json:"path" minLength:"1"`
+			}
+		}) (*struct{}, error) {
+			if err := s.FS.Mkdir(in.Body.Path); err != nil {
+				return nil, fsErr(err)
+			}
+			return nil, nil
+		})
+	huma.Register(api, op("fs-move", "POST", "/v1/fs/move", "write", "Rename or move (never overwrites)"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				From string `json:"from" minLength:"1"`
+				To   string `json:"to" minLength:"1"`
+			}
+		}) (*struct{}, error) {
+			if err := s.FS.Move(in.Body.From, in.Body.To); err != nil {
+				return nil, fsErr(err)
+			}
+			return nil, nil
+		})
+	huma.Register(api, op("fs-delete", "DELETE", "/v1/fs", "write", "Delete a file or folder"),
+		func(ctx context.Context, in *struct {
+			Path string `query:"path" required:"true"`
+		}) (*struct{}, error) {
+			if err := s.FS.Remove(in.Path); err != nil {
+				return nil, fsErr(err)
+			}
+			return nil, nil
+		})
+	huma.Register(api, op("fs-sign", "POST", "/v1/fs/sign", "read", "Short-lived stream URL that needs no token"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				Path       string `json:"path" minLength:"1"`
+				TTLSeconds int    `json:"ttlSeconds,omitempty" minimum:"1" maximum:"86400" default:"21600"`
+			}
+		}) (*struct{ Body map[string]string }, error) {
+			if _, err := s.FS.Stat(in.Body.Path); err != nil {
+				return nil, fsErr(err)
+			}
+			ttl := in.Body.TTLSeconds
+			if ttl == 0 {
+				ttl = 21600
+			}
+			q, err := s.FS.Sign(in.Body.Path, time.Duration(ttl)*time.Second)
+			if err != nil {
+				return nil, fsErr(err)
+			}
+			return body(map[string]string{"url": "/v1/raw/" + strings.TrimPrefix(in.Body.Path, "/") + "?" + q}), nil
+		})
+
+	huma.Register(api, op("providers", "GET", "/v1/providers", "read", "Providers with status and settings schema"),
+		func(ctx context.Context, _ *struct{}) (*struct{ Body []provider.Info }, error) {
+			return body(s.Providers.List()), nil
+		})
+	huma.Register(api, op("provider-enable", "PUT", "/v1/providers/{name}/enabled", "admin", "Switch a provider on or off (no restart)"),
+		func(ctx context.Context, in *struct {
+			Name string `path:"name"`
+			Body struct {
+				Enabled bool `json:"enabled"`
+			}
+		}) (*struct{}, error) {
+			if err := s.Providers.SetEnabled(in.Name, in.Body.Enabled); err != nil {
+				return nil, huma.Error400BadRequest(err.Error())
+			}
+			return nil, config.Set(s.CfgPath, "providers."+in.Name+".enabled", in.Body.Enabled)
+		})
+
+	huma.Register(api, op("doctor", "GET", "/v1/doctor", "read", "Helper tools present or missing"),
+		func(ctx context.Context, _ *struct{}) (*struct{ Body []tools.Tool }, error) {
+			return body(tools.Doctor(s.Cfg.Paths.Data)), nil
+		})
+}
+
+type ping struct {
+	Time int64 `json:"time"`
+}
+
+// raw streams a file with Range support. Auth: a signed URL (for players) or a read token.
+func (s *server) raw(w http.ResponseWriter, r *http.Request) {
+	p := r.PathValue("path")
+	q := r.URL.Query()
+	if q.Get("sig") != "" {
+		if !s.FS.Verify(p, q.Get("exp"), q.Get("sig")) {
+			http.Error(w, "invalid or expired link", http.StatusForbidden)
+			return
+		}
+	} else if rank[s.scope(r.Header.Get("Authorization"))] < rank["read"] {
+		http.Error(w, "missing or invalid token", http.StatusUnauthorized)
+		return
+	}
+	s.FS.Serve(w, r, p)
+}

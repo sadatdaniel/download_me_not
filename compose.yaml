@@ -1,0 +1,13 @@
+# First run:  docker compose run --rm dmn setup     (prints your API token once)
+# Then:       docker compose up -d
+# Update:     docker compose pull && docker compose up -d
+services:
+  dmn:
+    build: .
+    image: dmn:local
+    restart: unless-stopped
+    ports: ["127.0.0.1:8080:8080"] # put a reverse proxy, tunnel or VPN in front; see scope §5.10
+    volumes:
+      - ./dmn/config:/config
+      - ./dmn/data:/data
+      - ./dmn/downloads:/downloads

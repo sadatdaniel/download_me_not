@@ -25,3 +25,6 @@ Thumbs.db
 # self-generated test fixtures are allowed
 !spike/engine/testdata/*.torrent
 !internal/engine/testdata/*.torrent
+
+# local docker compose volumes
+/dmn/

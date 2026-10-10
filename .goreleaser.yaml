@@ -1,0 +1,20 @@
+# Binary name "dmn" is a placeholder (AGENTS.md rule 10).
+# M3 adds: ECDSA signature of checksums.txt for go-selfupdate, a public releases repo, and the Docker image.
+version: 2
+builds:
+  - id: dmn
+    main: ./cmd/dmn
+    binary: dmn
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+archives:
+  - formats: [tar.gz]
+    files: [README*, THIRD_PARTY*]
+checksum:
+  name_template: checksums.txt
+changelog:
+  use: github

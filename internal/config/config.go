@@ -108,10 +108,20 @@ func Load(path string, flags *pflag.FlagSet) (*koanf.Koanf, *Config, error) {
 	return k, &c, nil
 }
 
+// LoadFile loads only the config file (missing file = empty).
+func LoadFile(path string) (*koanf.Koanf, bool, error) {
+	k := koanf.New(".")
+	err := k.Load(file.Provider(path), yaml.Parser())
+	if errors.Is(err, fs.ErrNotExist) {
+		return k, false, nil
+	}
+	return k, err == nil, err
+}
+
 // Set writes one key into the config file only (not env/flags), creating the file if needed.
 func Set(path, key string, value any) error {
-	k := koanf.New(".")
-	if err := k.Load(file.Provider(path), yaml.Parser()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	k, _, err := LoadFile(path)
+	if err != nil {
 		return err
 	}
 	if err := k.Set(key, value); err != nil {

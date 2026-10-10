@@ -1,7 +1,7 @@
 # Status
 
-**Current state:** Step 1 (engine spike) done. **anacrolix/torrent v1.61 kept**; see [engine-spike.md](engine-spike.md). The dev container (`compose.dev.yaml`) works: the `go` service has internet for modules, the `test` service has no network.
-**Next action:** Step 2, scaffold. Start with `cmd/dmn` (cobra, §5.5 stubs with `--json`) and `internal/config` (koanf precedence), then store, api, fsapi.
+**Current state:** Step 2 (scaffold) done, apart from the first CI run on GitHub. `dmn` builds static; setup → serve → ls/mkdir/mv/rm/watch/providers/doctor/config work end to end. All tests pass offline. The torrent engine exists (internal/engine) but is not started by `serve` yet (job layer is M1).
+**Next action:** 1) Check the first GitHub Actions run (`gh run list`) and fix anything red. 2) Write the M1 plan: job manager (crash-only + reconcile loop, docs/architecture.md), `add`, the IDM-grade HTTP downloader (dynamic segmentation, resume, retry, header passthrough), stream mode, ZIP folder download and copy, `doctor --selftest`.
 **Blockers:** none.
 
 ## Checklist
@@ -20,16 +20,18 @@
 - [ ] Later (M2): isolated multi-container swarm with netem, private DHT, SOCKS5, IPv6, run on real arm64
 
 ### Step 2: Scaffold
-- [ ] Go module, `cmd/dmn` with cobra, §5.5 commands stubbed with `--json`
-- [ ] Config (koanf): flags > env > file > defaults; `config get/set/show --effective`
-- [ ] SQLite (modernc) plus an embedded migration runner (`user_version`)
-- [ ] API (huma, `/v1`), token auth with read/write/admin scopes, SSE progress
-- [ ] Folder API on `os.Root`, Range streaming, HMAC-signed URLs, path-escape tests
-- [ ] Provider interfaces plus a registry with JSON Schema settings
-- [ ] Engine interface (from spike) plus the anacrolix implementation: GotInfo before DownloadAll, VerifyData on startup, recover around add, reject v2-only
-- [ ] netguard: SSRF dialer (also for anacrolix HTTP/tracker dialers) plus a CONNECT proxy for yt-dlp
-- [ ] CI: vet, staticcheck, `test -race`, static cross-build, gitleaks
-- [ ] GoReleaser, Dockerfile, compose.yaml
+- [x] Go module, `cmd/dmn` with cobra, §5.5 commands stubbed with `--json`
+- [x] Config (koanf): flags > env > file > defaults; `config get/set/show --effective`
+- [x] SQLite (modernc) plus an embedded migration runner (`user_version`)
+- [x] API (huma, `/v1`), token auth with read/write/admin scopes, SSE progress
+- [x] Folder API on `os.Root`, Range streaming, HMAC-signed URLs, path-escape tests
+- [x] Provider interfaces plus a registry with JSON Schema settings
+- [x] Engine interface (from spike) plus the anacrolix implementation: GotInfo before DownloadAll, VerifyData on startup, recover around add, reject v2-only
+- [x] netguard: SSRF dialer (also for anacrolix HTTP/tracker dialers) plus a CONNECT proxy for yt-dlp
+- [x] CI: vet, staticcheck, `test -race`, static cross-build, gitleaks
+- [x] GoReleaser, Dockerfile, compose.yaml (Docker image without helper tools yet: M3)
+- [x] OpenAPI snapshot `api/openapi.json` as the app contract
+- [x] docs/architecture.md: breakage map and self-healing rules
 
 ### Milestones (each gets its own plan)
 - [ ] M1 core: IDM-grade HTTP downloader (dynamic segmentation, resume, retry, header passthrough, aria2c benchmark), queue, stream mode, folder API
@@ -41,3 +43,4 @@
 ## Session log
 - 2026-10-10: Plan approved. Bootstrap: repo, agent docs, spec plus verification notes.
 - 2026-10-10: Legal-testing rule added (AGENTS.md rule 7). Engine spike: 20 offline checks, anacrolix kept; gaps: v2-only torrents, LSD.
+- 2026-10-10: Step 2 scaffold: all internal packages, CLI, API, CI, GoReleaser, Docker. Engine fixes: IPv4/IPv6 pinning on bind, Done() signal. libtorrent rejected (cgo).
