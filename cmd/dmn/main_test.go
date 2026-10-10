@@ -28,3 +28,17 @@ func TestPieceBar(t *testing.T) {
 		t.Fatalf("width: %q", got)
 	}
 }
+
+func TestParseSeed(t *testing.T) {
+	if p, err := parseSeed("ratio:1.5"); err != nil || p.Policy != "ratio" || p.Ratio != 1.5 {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if p, err := parseSeed("time:60"); err != nil || p.Minutes != 60 {
+		t.Fatalf("%+v %v", p, err)
+	}
+	for _, bad := range []string{"ratio:x", "sometimes", "time:"} {
+		if _, err := parseSeed(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

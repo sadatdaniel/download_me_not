@@ -210,8 +210,10 @@ func TestStreamWhileDownloading(t *testing.T) {
 	}
 }
 
-func TestTorrentJob(t *testing.T) {
-	// Seeder: an anacrolix client with our own content. Tracker: a local HTTP handler.
+// swarmFixture starts a seeder (anacrolix client, our own content) and a local HTTP tracker
+// that points to it. It returns the .torrent bytes and the content.
+func swarmFixture(t *testing.T) ([]byte, []byte) {
+	t.Helper()
 	sdir := t.TempDir()
 	data := payload(1<<20+5, 4)
 	os.WriteFile(filepath.Join(sdir, "clip.bin"), data, 0o644)
@@ -223,7 +225,7 @@ func TestTorrentJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer seeder.Close()
+	t.Cleanup(func() { seeder.Close() })
 	tracker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peer := make([]byte, 6)
 		copy(peer, net.ParseIP("127.0.0.1").To4())
@@ -231,7 +233,7 @@ func TestTorrentJob(t *testing.T) {
 		b, _ := bencode.Marshal(map[string]any{"interval": 60, "peers": string(peer)})
 		w.Write(b)
 	}))
-	defer tracker.Close()
+	t.Cleanup(tracker.Close)
 	info := metainfo.Info{PieceLength: 64 << 10}
 	info.BuildFromFilePath(filepath.Join(sdir, "clip.bin"))
 	ib, _ := bencode.Marshal(info)
@@ -240,7 +242,12 @@ func TestTorrentJob(t *testing.T) {
 	st.VerifyDataContext(context.Background())
 	var buf bytes.Buffer
 	mi.Write(&buf)
+	return buf.Bytes(), data
+}
 
+func TestTorrentJob(t *testing.T) {
+	tb, data := swarmFixture(t)
+	buf := bytes.NewBuffer(tb)
 	dir := t.TempDir()
 	e := start(t, filepath.Join(dir, "j.db"), dir)
 	j, _, err := e.m.Add(AddRequest{Torrent: buf.Bytes()})
@@ -279,5 +286,76 @@ func TestHint(t *testing.T) {
 		if got := m.hint(c.sw, c.st); !strings.Contains(got, c.want) {
 			t.Errorf("%+v: %q, want %q", c.sw, got, c.want)
 		}
+	}
+}
+
+func TestDiskGuardAndPriority(t *testing.T) {
+	data := payload(512<<10, 5)
+	url := fileServer(t, data, 2*time.Millisecond, nil)
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "j.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var free atomic.Int64 // starts at 0: disk "full"
+	m := New(Options{DB: db, Downloads: dir, Client: http.DefaultClient, MaxActive: 1, Tick: 20 * time.Millisecond,
+		DiskReserve: 1 << 20, FreeSpace: func(string) (int64, error) { return free.Load(), nil }})
+	a, _, _ := m.Add(AddRequest{Source: url + "/a.bin"})
+	b, _, _ := m.Add(AddRequest{Source: url + "/b.bin"})
+	c, _, _ := m.Add(AddRequest{Source: url + "/c.bin", Priority: 5})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- m.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+
+	time.Sleep(200 * time.Millisecond)
+	if j, _ := m.Get(a.ID); j.State != "queued" || !strings.Contains(j.Error, "disk space") {
+		t.Fatalf("disk full but job %q (%q)", j.State, j.Error)
+	}
+	free.Store(1 << 40)
+	// c has the highest priority, so it runs first; a and b wait (one slot).
+	waitState(t, m, c.ID, "done", 10*time.Second)
+	waitState(t, m, a.ID, "done", 10*time.Second)
+	j := waitState(t, m, b.ID, "done", 10*time.Second)
+	ja, _ := m.Get(a.ID)
+	jc, _ := m.Get(c.ID)
+	if !(jc.Updated <= ja.Updated && ja.Updated <= j.Updated) || ja.Error != "" {
+		t.Fatalf("order or error wrong: %+v %+v %+v", jc, ja, j)
+	}
+}
+
+func TestSeedingFreesSlot(t *testing.T) {
+	tb, _ := swarmFixture(t)
+	web := fileServer(t, payload(256<<10, 6), 0, nil)
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "j.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	m := New(Options{DB: db, Downloads: dir, Client: http.DefaultClient, MaxActive: 1, Tick: 20 * time.Millisecond,
+		NewEngine: func() (engine.Engine, error) {
+			return engine.New(engine.Options{DataDir: dir, ListenHost: "127.0.0.1", NoDHT: true, NoPEX: true})
+		}})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- m.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	tj, _, err := m.Add(AddRequest{Torrent: tb, Seed: &SeedPolicy{Policy: "forever"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, m, tj.ID, "seeding", 20*time.Second)
+	wj, _, _ := m.Add(AddRequest{Source: web + "/w.bin"})
+	waitState(t, m, wj.ID, "done", 10*time.Second) // ran although the only slot holds a seeding torrent
+	if files, err := m.Files(tj.ID); err != nil || len(files) != 1 {
+		t.Fatalf("files: %v %v", files, err)
+	}
+	if err := m.SetFilePriority(tj.ID, 0, "skip"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetFilePriority(tj.ID, 5, "skip"); err == nil {
+		t.Fatal("bad index accepted")
 	}
 }

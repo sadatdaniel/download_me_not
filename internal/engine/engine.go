@@ -271,9 +271,15 @@ func (t *tor) WaitInfo(ctx context.Context) error {
 	}
 }
 
+// Start is synchronous when metadata is known (so later priority changes stick), otherwise it
+// waits in the background: DownloadAll before metadata panics.
 func (t *tor) Start() {
+	if t.t.Info() != nil {
+		t.t.DownloadAll()
+		return
+	}
 	go func() {
-		<-t.t.GotInfo() // DownloadAll before metadata panics
+		<-t.t.GotInfo()
 		t.t.DownloadAll()
 	}()
 }

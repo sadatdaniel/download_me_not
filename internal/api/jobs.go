@@ -138,6 +138,39 @@ func (s *server) jobRoutes(api huma.API) {
 			}
 			return nil, nil
 		})
+	huma.Register(api, op("job-priority", "PUT", "/v1/jobs/{id}/priority", "write", "Reorder the queue: higher starts first"),
+		func(ctx context.Context, in *struct {
+			ID   string `path:"id"`
+			Body struct {
+				Priority int `json:"priority"`
+			}
+		}) (*struct{}, error) {
+			if err := s.Jobs.SetPriority(in.ID, in.Body.Priority); err != nil {
+				return nil, jobErr(err)
+			}
+			return nil, nil
+		})
+	huma.Register(api, op("job-files", "GET", "/v1/jobs/{id}/files", "read", "Files of a running torrent (the file picker)"),
+		func(ctx context.Context, in *idIn) (*struct{ Body []engine.File }, error) {
+			fs, err := s.Jobs.Files(in.ID)
+			if err != nil {
+				return nil, jobErr(err)
+			}
+			return body(fs), nil
+		})
+	huma.Register(api, op("job-file-priority", "PUT", "/v1/jobs/{id}/files/{index}/priority", "write", "Skip a file or raise its priority"),
+		func(ctx context.Context, in *struct {
+			ID    string `path:"id"`
+			Index int    `path:"index"`
+			Body  struct {
+				Priority string `json:"priority" enum:"skip,normal,high"`
+			}
+		}) (*struct{}, error) {
+			if err := s.Jobs.SetFilePriority(in.ID, in.Index, in.Body.Priority); err != nil {
+				return nil, jobErr(err)
+			}
+			return nil, nil
+		})
 	huma.Register(api, op("sign-job", "POST", "/v1/jobs/{id}/sign", "read", "Short-lived stream URL for a download, also while it runs"),
 		func(ctx context.Context, in *idIn) (*struct{ Body map[string]string }, error) {
 			if _, err := s.Jobs.Get(in.ID); err != nil {

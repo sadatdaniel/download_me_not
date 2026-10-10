@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** M2.3 seeding policy, disk guard, queue priority (see the checklist). Engine facts for M2: no runtime blocklist setter (use our own Ranger), no SOCKS5 in the library (AddDialer + DialForPeerConns=false), limiters can change at runtime.
+**Next action:** M2.4 archive extraction (see the checklist). Engine facts for M2: no runtime blocklist setter (use our own Ranger), no SOCKS5 in the library (AddDialer + DialForPeerConns=false), limiters can change at runtime.
 **Blockers:** none.
 
 ## Checklist
@@ -47,7 +47,7 @@
 - [ ] M2 torrent management (§5.9 "ours" items from engine-spike.md)
   - [x] M2.1 settings: engine options from the torrent provider schema (encryption, uTP, IPv6, max peers, anonymous mode, bind address); runtime global limits (rate.Limiter.SetLimit) with API and CLI `limits`; swappable blocklist (our iplist.Ranger with an atomic swap, so refresh needs no restart); fields that need a restart are flagged in the schema
   - [x] M2.2 views: peers (address, client, progress, rates, encrypted), piece map, availability, trackers (list, add, remove), a plain-language "why slow/stalled" hint; API plus CLI peers, pieces, trackers, recheck
-  - [ ] M2.3 seeding policy (stop, ratio, time, forever), disk-space guard (check before start, poll, pause with reason), queue priority and reordering
+  - [x] M2.3 seeding policy (stop, ratio, time, forever), disk-space guard (check before start, poll, pause with reason), queue priority and reordering
   - [ ] M2.4 post-completion: archive extraction (mholt/archives on os.Root, size and ratio limits, skip encrypted), optional delete of the archive
   - [ ] M2.5 swarm memory (below)
   - [ ] M2.6 kill switch (pause when the bound interface goes down), SOCKS5 dialer (ours: AddDialer plus x/net/proxy), UPnP opt-in, stream mode first/last pieces, blocklist from URL on a schedule

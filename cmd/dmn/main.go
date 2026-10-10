@@ -58,7 +58,7 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd())
 	for name, ms := range map[string]string{
 		"copy": "M3", "formats": "M3",
 		"cookies": "M3", "update": "M3", "pair": "M3", "uninstall": "M3",
@@ -144,6 +144,9 @@ func serveCmd() *cobra.Command {
 		lim := limits.New(cfg.Limits.Down, cfg.Limits.Up)
 		jm := jobs.New(jobs.Options{DB: db, Downloads: cfg.Paths.Downloads, Client: netguard.Client(), Allowed: reg.Enabled,
 			Connections: setting(cfg, "web", "connections", 16), Limiter: lim.Down,
+			MaxActive: cfg.Jobs.MaxActive, DiskReserve: cfg.Jobs.Reserve,
+			Seed: jobs.SeedPolicy{Policy: settingStr(cfg, "torrent", "seed", "stop"),
+				Ratio: settingFloat(cfg, "torrent", "seedRatio", 1), Minutes: setting(cfg, "torrent", "seedMinutes", 60)},
 			NewEngine: func() (engine.Engine, error) { return newEngine(cfg, lim) }})
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
@@ -195,6 +198,22 @@ func newEngine(cfg *config.Config, lim *limits.Limits) (engine.Engine, error) {
 		Anonymous:   settingBool(cfg, "torrent", "anonymous", false),
 		DownLimiter: lim.Down, UpLimiter: lim.Up, Blocklist: bl, Control: netguard.Safe,
 	})
+}
+
+func settingFloat(cfg *config.Config, prov, key string, def float64) float64 {
+	switch v := cfg.Providers[prov].Settings[key].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case string:
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return def
 }
 
 func settingStr(cfg *config.Config, prov, key, def string) string {
@@ -550,8 +569,17 @@ func addCmd() *cobra.Command {
 	c := &cobra.Command{Use: "add <url | magnet | file.torrent>", Short: "Add a download", Args: cobra.ExactArgs(1)}
 	mode := c.Flags().String("mode", "standard", "standard or stream (watch while it downloads)")
 	headers := c.Flags().StringArrayP("header", "H", nil, `request header, e.g. -H "Cookie: a=b" (repeatable)`)
+	seed := c.Flags().String("seed", "", "torrents: stop, ratio:1.5, time:60 (minutes) or forever")
+	prio := c.Flags().Int("priority", 0, "queue priority: higher starts first")
 	c.RunE = func(_ *cobra.Command, a []string) error {
-		req := jobs.AddRequest{Source: a[0], Mode: *mode, Header: map[string]string{}}
+		req := jobs.AddRequest{Source: a[0], Mode: *mode, Header: map[string]string{}, Priority: *prio}
+		if *seed != "" {
+			p, err := parseSeed(*seed)
+			if err != nil {
+				return err
+			}
+			req.Seed = &p
+		}
 		if strings.HasSuffix(strings.ToLower(a[0]), ".torrent") {
 			if b, err := os.ReadFile(a[0]); err == nil { // a local file; otherwise treat it as a URL
 				req.Source, req.Torrent = "", b
@@ -809,5 +837,70 @@ func providersCmd() *cobra.Command {
 		return fmt.Errorf("providers config is not implemented yet (milestone M3)")
 	}}
 	c.AddCommand(list, toggle("enable", true), toggle("disable", false), cfgC)
+	return c
+}
+
+// parseSeed reads stop, forever, ratio:1.5 or time:60.
+func parseSeed(s string) (jobs.SeedPolicy, error) {
+	kind, arg, _ := strings.Cut(s, ":")
+	p := jobs.SeedPolicy{Policy: kind}
+	var err error
+	switch kind {
+	case "stop", "forever":
+		return p, nil
+	case "ratio":
+		p.Ratio, err = strconv.ParseFloat(arg, 64)
+	case "time":
+		p.Minutes, err = strconv.Atoi(arg)
+	default:
+		err = errors.New("unknown policy")
+	}
+	if err != nil {
+		return p, fmt.Errorf("--seed %q: use stop, ratio:1.5, time:60 or forever", s)
+	}
+	return p, nil
+}
+
+func priorityCmd() *cobra.Command {
+	return &cobra.Command{Use: "priority <id> <n>", Short: "Reorder the queue: higher starts first", Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, a []string) error {
+			n, err := strconv.Atoi(a[1])
+			if err != nil {
+				return fmt.Errorf("priority must be a number")
+			}
+			return call("PUT", "/v1/jobs/"+url.PathEscape(a[0])+"/priority", map[string]int{"priority": n}, nil)
+		}}
+}
+
+func filesCmd() *cobra.Command {
+	c := &cobra.Command{Use: "files <id>", Short: "List a torrent's files; --set 2=skip changes one (skip, normal, high)", Args: cobra.ExactArgs(1)}
+	set := c.Flags().StringArray("set", nil, "index=priority (repeatable)")
+	c.RunE = func(_ *cobra.Command, a []string) error {
+		base := "/v1/jobs/" + url.PathEscape(a[0]) + "/files"
+		for _, s := range *set {
+			i, p, ok := strings.Cut(s, "=")
+			if !ok {
+				return fmt.Errorf("--set %q: want index=priority", s)
+			}
+			if err := call("PUT", base+"/"+url.PathEscape(i)+"/priority", map[string]string{"priority": p}, nil); err != nil {
+				return err
+			}
+		}
+		var fs []engine.File
+		if err := call("GET", base, nil, &fs); err != nil {
+			return err
+		}
+		return show(fs, func() {
+			rows := [][]string{{"#", "DONE", "SIZE", "PATH"}}
+			for i, f := range fs {
+				pct := 100.0
+				if f.Length > 0 {
+					pct = 100 * float64(f.Completed) / float64(f.Length)
+				}
+				rows = append(rows, []string{fmt.Sprint(i), fmt.Sprintf("%.0f%%", pct), fmt.Sprint(f.Length), f.Path})
+			}
+			table(rows)
+		})
+	}
 	return c
 }

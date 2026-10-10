@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -32,14 +33,17 @@ import (
 type Options struct {
 	DB              *sql.DB
 	Downloads       string
-	Client          *http.Client                  // netguard.Client() in production
-	NewEngine       func() (engine.Engine, error) // called on the first torrent job only
-	MaxActive       int                           // default 3
-	Connections     int                           // per web download, default 16
-	MetadataTimeout time.Duration                 // default 5 min
-	Tick            time.Duration                 // reconcile interval, default 2 s
-	Allowed         func(kind string) bool        // provider toggles; nil = all allowed
-	Limiter         *rate.Limiter                 // global download limit for web jobs
+	Client          *http.Client                    // netguard.Client() in production
+	NewEngine       func() (engine.Engine, error)   // called on the first torrent job only
+	MaxActive       int                             // default 3
+	Connections     int                             // per web download, default 16
+	MetadataTimeout time.Duration                   // default 5 min
+	Tick            time.Duration                   // reconcile interval, default 2 s
+	Allowed         func(kind string) bool          // provider toggles; nil = all allowed
+	Limiter         *rate.Limiter                   // global download limit for web jobs
+	Seed            SeedPolicy                      // default seeding policy for torrents
+	DiskReserve     int64                           // keep this much free in the download folder; default 1 GiB
+	FreeSpace       func(dir string) (int64, error) // tests override; default statfs
 }
 
 var (
@@ -59,12 +63,14 @@ type Manager struct {
 }
 
 type runner struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	mu     sync.Mutex
-	dl     *httpdl.Download
-	part   string
-	tor    engine.Torrent
+	cancel  context.CancelFunc
+	done    chan struct{}
+	mu      sync.Mutex
+	dl      *httpdl.Download
+	part    string
+	tor     engine.Torrent
+	seeding bool   // finished downloading; does not take a download slot
+	reason  string // why the manager stopped it (e.g. disk full), shown as the job error
 }
 
 type sample struct {
@@ -78,10 +84,12 @@ type webMeta struct {
 }
 
 type torMeta struct {
-	Torrent  []byte     `json:"torrent,omitempty"`
-	Magnet   string     `json:"magnet,omitempty"`
-	Started  bool       `json:"started"`            // data may exist on disk: recheck before resuming
-	Trackers [][]string `json:"trackers,omitempty"` // user-edited tracker list, re-applied on start
+	Torrent  []byte         `json:"torrent,omitempty"`
+	Magnet   string         `json:"magnet,omitempty"`
+	Started  bool           `json:"started"`            // data may exist on disk: recheck before resuming
+	Trackers [][]string     `json:"trackers,omitempty"` // user-edited tracker list, re-applied on start
+	Seed     *SeedPolicy    `json:"seed,omitempty"`     // per-torrent override
+	Files    map[int]string `json:"files,omitempty"`    // per-file priority: skip, normal, high
 }
 
 func New(o Options) *Manager {
@@ -96,6 +104,15 @@ func New(o Options) *Manager {
 	}
 	if o.Tick <= 0 {
 		o.Tick = 2 * time.Second
+	}
+	if o.DiskReserve <= 0 {
+		o.DiskReserve = 1 << 30
+	}
+	if o.FreeSpace == nil {
+		o.FreeSpace = freeSpace
+	}
+	if o.Seed.Policy == "" {
+		o.Seed.Policy = "stop"
 	}
 	return &Manager{o: o, kick: make(chan struct{}, 1), run: map[string]*runner{}, last: map[string]sample{}}
 }
@@ -114,10 +131,12 @@ func newID() string {
 }
 
 type AddRequest struct {
-	Source  string            `json:"source,omitempty"`  // URL or magnet link
-	Torrent []byte            `json:"torrent,omitempty"` // .torrent file content (base64 in JSON)
-	Mode    string            `json:"mode,omitempty"`    // standard (default) or stream
-	Header  map[string]string `json:"header,omitempty"`  // e.g. Cookie, Referer, User-Agent from the browser
+	Source   string            `json:"source,omitempty"`   // URL or magnet link
+	Torrent  []byte            `json:"torrent,omitempty"`  // .torrent file content (base64 in JSON)
+	Mode     string            `json:"mode,omitempty"`     // standard (default) or stream
+	Header   map[string]string `json:"header,omitempty"`   // e.g. Cookie, Referer, User-Agent from the browser
+	Seed     *SeedPolicy       `json:"seed,omitempty"`     // torrents: override the default seeding policy
+	Priority int               `json:"priority,omitempty"` // higher starts first
 }
 
 // Add creates a job. Adding a torrent that already has a job returns that job and true.
@@ -129,7 +148,7 @@ func (m *Manager) Add(r AddRequest) (store.Job, bool, error) {
 		return store.Job{}, false, fmt.Errorf("mode must be standard or stream")
 	}
 	now := time.Now().Unix()
-	j := store.Job{ID: newID(), Mode: r.Mode, Want: "running", State: "queued", Total: -1, Created: now, Updated: now}
+	j := store.Job{ID: newID(), Mode: r.Mode, Want: "running", State: "queued", Total: -1, Priority: r.Priority, Created: now, Updated: now}
 	var meta any
 	switch {
 	case len(r.Torrent) > 0 || strings.HasPrefix(r.Source, "magnet:"):
@@ -148,7 +167,7 @@ func (m *Manager) Add(r AddRequest) (store.Job, bool, error) {
 		if j.Source == "" {
 			j.Source = "torrent:" + ih
 		}
-		meta = torMeta{Torrent: r.Torrent, Magnet: strings.TrimPrefix(r.Source, "torrent:")}
+		meta = torMeta{Torrent: r.Torrent, Magnet: strings.TrimPrefix(r.Source, "torrent:"), Seed: r.Seed}
 	default:
 		u, err := url.Parse(r.Source)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
@@ -310,21 +329,50 @@ func (m *Manager) reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	slices.Reverse(jobs) // oldest first: FIFO queue
+	// Higher priority first, then oldest first (FIFO).
+	slices.SortStableFunc(jobs, func(a, b store.Job) int {
+		if a.Priority != b.Priority {
+			return b.Priority - a.Priority
+		}
+		return int(a.Created - b.Created)
+	})
+	free, ferr := m.o.FreeSpace(m.o.Downloads)
+	lowDisk := ferr == nil && free < m.o.DiskReserve
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	active := len(m.run)
+	active := 0
+	for _, r := range m.run {
+		r.mu.Lock()
+		if !r.seeding {
+			active++
+		}
+		r.mu.Unlock()
+	}
 	for _, j := range jobs {
 		if j.State == "done" || (j.State == "failed" && j.Want == "running") {
 			continue
 		}
 		r := m.run[j.ID]
+		need := j.Total - j.Done // bytes still to write; unknown (-1 total) counts as 0
 		switch {
 		case j.Want == "paused" && r != nil:
 			r.cancel() // the runner records "paused" when it exits
 		case j.Want == "paused" && j.State != "paused" && j.State != "failed":
 			store.SetJob(m.o.DB, j.ID, map[string]any{"state": "paused"})
+		case j.Want == "running" && r != nil && lowDisk && j.State != "seeding":
+			r.mu.Lock()
+			r.reason = fmt.Sprintf("waiting for disk space: %d MiB free, keeping %d MiB in reserve", free>>20, m.o.DiskReserve>>20)
+			r.mu.Unlock()
+			r.cancel()
+		case j.Want == "running" && r == nil && ferr == nil && free-max(need, 0) < m.o.DiskReserve:
+			msg := fmt.Sprintf("waiting for disk space: needs %d MiB, %d MiB free", max(need, 0)>>20, free>>20)
+			if j.State != "queued" || j.Error != msg {
+				store.SetJob(m.o.DB, j.ID, map[string]any{"state": "queued", "error": msg})
+			}
 		case j.Want == "running" && r == nil && active < m.o.MaxActive:
+			if j.Error != "" && strings.HasPrefix(j.Error, "waiting for disk space") {
+				store.SetJob(m.o.DB, j.ID, map[string]any{"error": ""})
+			}
 			m.start(ctx, j)
 			active++
 		case j.Want == "running" && r == nil && j.State != "queued":
@@ -332,6 +380,14 @@ func (m *Manager) reconcile(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func freeSpace(dir string) (int64, error) {
+	var s syscall.Statfs_t
+	if err := syscall.Statfs(dir, &s); err != nil {
+		return 0, err
+	}
+	return int64(s.Bavail) * int64(s.Bsize), nil
 }
 
 // start must be called with m.mu held.
@@ -358,6 +414,12 @@ func (m *Manager) start(parent context.Context, j store.Job) {
 
 func (m *Manager) finish(ctx context.Context, id string, err error) {
 	m.mu.Lock()
+	reason := ""
+	if r := m.run[id]; r != nil {
+		r.mu.Lock()
+		reason = r.reason
+		r.mu.Unlock()
+	}
 	delete(m.run, id)
 	delete(m.last, id)
 	m.mu.Unlock()
@@ -372,7 +434,10 @@ func (m *Manager) finish(ctx context.Context, id string, err error) {
 	case ctx.Err() != nil && j.Want == "paused":
 		f["state"] = "paused"
 	case ctx.Err() != nil:
-		f["state"] = "queued" // mode switch or shutdown: resume on the next pass or next start
+		f["state"] = "queued" // mode switch, disk guard or shutdown: resume on the next pass or next start
+		if reason != "" {
+			f["error"] = reason
+		}
 	default:
 		f["state"], f["error"] = "failed", err.Error()
 	}
@@ -540,21 +605,66 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 	t.Resume()
 	// Both modes download everything; a player's reader raises priority where it reads, which is
 	// what stream mode needs. ponytail: first/last-piece priority for stream mode comes with M2.
-	t.Start()
+	t.Start() // synchronous here: metadata is known, so file priorities below aren't overwritten
+	for i, p := range meta.Files {
+		t.SetFilePriority(i, filePriority[p])
+	}
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	for {
 		select {
 		case <-t.Done():
-			// Seeding policy default: stop at 100% (scope §5.9). Files stay on disk.
-			store.SetJob(m.o.DB, j.ID, map[string]any{"done": total})
-			return t.Drop(false)
+			store.SetJob(m.o.DB, j.ID, map[string]any{"done": t.Stats().Completed})
+			return m.seed(ctx, r, j.ID, t, total, meta.Seed)
 		case <-ctx.Done():
 			t.Pause()
 			store.SetJob(m.o.DB, j.ID, map[string]any{"done": t.Stats().Completed})
 			return ctx.Err()
 		case <-tick.C:
 			store.SetJob(m.o.DB, j.ID, map[string]any{"done": t.Stats().Completed})
+		}
+	}
+}
+
+var filePriority = map[string]engine.Priority{"skip": engine.Skip, "normal": engine.Normal, "high": engine.High}
+
+// SeedPolicy decides what happens after a torrent completes (scope §5.9). Default: stop.
+type SeedPolicy struct {
+	Policy  string  `json:"policy" enum:"stop,ratio,time,forever"`
+	Ratio   float64 `json:"ratio,omitempty"`   // policy ratio: stop when uploaded >= ratio * size
+	Minutes int     `json:"minutes,omitempty"` // policy time: stop after this long
+}
+
+// seed keeps a finished torrent uploading according to its policy, then drops it (files stay).
+// ponytail: upload and time counters restart with the server; persist them if users need exact ratios.
+func (m *Manager) seed(ctx context.Context, r *runner, id string, t engine.Torrent, total int64, override *SeedPolicy) error {
+	p := m.o.Seed
+	if override != nil {
+		p = *override
+	}
+	if p.Policy == "" || p.Policy == "stop" {
+		return t.Drop(false)
+	}
+	r.mu.Lock()
+	r.seeding = true // frees the download slot
+	r.mu.Unlock()
+	store.SetJob(m.o.DB, id, map[string]any{"state": "seeding"})
+	m.poke()
+	start, up0 := time.Now(), t.Stats().Uploaded
+	tick := time.NewTicker(10 * time.Second)
+	defer tick.Stop()
+	for {
+		up := t.Stats().Uploaded - up0
+		switch {
+		case p.Policy == "ratio" && total > 0 && float64(up) >= p.Ratio*float64(total),
+			p.Policy == "time" && time.Since(start) >= time.Duration(p.Minutes)*time.Minute:
+			return t.Drop(false)
+		}
+		select {
+		case <-ctx.Done():
+			t.Pause()
+			return ctx.Err()
+		case <-tick.C:
 		}
 	}
 }
@@ -702,3 +812,15 @@ func (g *growing) Seek(off int64, whence int) (int64, error) {
 }
 
 func (g *growing) Close() error { return g.f.Close() }
+
+// SetPriority reorders the queue: higher starts first. Running jobs keep running.
+func (m *Manager) SetPriority(id string, p int) error {
+	if _, err := m.get(id); err != nil {
+		return err
+	}
+	if err := store.SetJob(m.o.DB, id, map[string]any{"priority": p}); err != nil {
+		return err
+	}
+	m.poke()
+	return nil
+}
