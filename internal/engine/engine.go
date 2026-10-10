@@ -49,6 +49,9 @@ type Torrent interface {
 	Stats() Stats
 	Peers() []Peer
 	Pieces() []PieceRun
+	Swarm() Swarm
+	Trackers() [][]string
+	SetTrackers(tiers [][]string)
 	// Reader for one file; reading and seeking move download priority (stream mode).
 	Reader(index int) io.ReadSeekCloser
 	Drop(deleteData bool) error
@@ -80,10 +83,23 @@ type Stats struct {
 	Total      int64   `json:"total"` // 0 until metadata is known
 }
 
-// Peer: progress, rates and direction come in M2 (peer view).
+// Peer is one connected peer. Direction and encryption are not exposed by anacrolix v1.61.
 type Peer struct {
-	Addr   string `json:"addr"`
-	Client string `json:"client"`
+	Addr     string  `json:"addr"`
+	Client   string  `json:"client"`
+	Source   string  `json:"source"`   // how we found it: tracker, DHT, PEX, ...
+	Progress float64 `json:"progress"` // 0..1 of the torrent the peer has
+	DownRate float64 `json:"downRate"` // bytes/s from this peer
+	UpRate   float64 `json:"upRate"`
+}
+
+// Swarm summarises availability for the piece view and the "why is it slow" hint.
+type Swarm struct {
+	Peers        int     `json:"peers"`
+	Seeders      int     `json:"seeders"`
+	Pieces       int     `json:"pieces"`
+	Complete     int     `json:"complete"`
+	Availability float64 `json:"availability"` // distributed copies among connected peers (qBittorrent's definition)
 }
 
 type PieceRun struct {
@@ -317,9 +333,15 @@ func (t *tor) Stats() Stats {
 func (t *tor) Peers() []Peer {
 	pcs := t.t.PeerConns()
 	out := make([]Peer, 0, len(pcs))
+	n := 1
+	if t.t.Info() != nil {
+		n = max(t.t.NumPieces(), 1)
+	}
 	for _, pc := range pcs {
 		name, _ := pc.PeerClientName.Load().(string)
-		out = append(out, Peer{Addr: pc.RemoteAddr.String(), Client: name})
+		st := pc.Stats()
+		out = append(out, Peer{Addr: pc.RemoteAddr.String(), Client: name, Source: string(pc.Discovery),
+			Progress: min(1, float64(st.RemotePieceCount)/float64(n)), DownRate: st.DownloadRate, UpRate: st.LastWriteUploadRate})
 	}
 	return out
 }
@@ -450,3 +472,43 @@ func (b *Blocklist) Load(r io.Reader) (int, error) {
 	b.p.Store(l)
 	return l.NumRanges(), nil
 }
+
+func (t *tor) Swarm() Swarm {
+	g := t.t.Stats()
+	s := Swarm{Peers: g.ActivePeers, Seeders: g.ConnectedSeeders, Complete: g.PiecesComplete}
+	if t.t.Info() == nil {
+		return s
+	}
+	s.Pieces = t.t.NumPieces()
+	counts := make([]int, s.Pieces)
+	for _, pc := range t.t.PeerConns() {
+		it := pc.PeerPieces().Iterator()
+		for it.HasNext() {
+			if i := int(it.Next()); i < len(counts) {
+				counts[i]++
+			}
+		}
+	}
+	// Distributed copies: the rarest piece's count plus the share of pieces above that count.
+	if s.Pieces > 0 {
+		lo := counts[0]
+		for _, c := range counts {
+			lo = min(lo, c)
+		}
+		above := 0
+		for _, c := range counts {
+			if c > lo {
+				above++
+			}
+		}
+		s.Availability = float64(lo) + float64(above)/float64(s.Pieces)
+	}
+	return s
+}
+
+func (t *tor) Trackers() [][]string {
+	mi := t.t.Metainfo()
+	return mi.UpvertedAnnounceList()
+}
+
+func (t *tor) SetTrackers(tiers [][]string) { t.t.ModifyTrackers(tiers) }

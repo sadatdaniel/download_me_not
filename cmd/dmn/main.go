@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,10 +58,9 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), limitsCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd())
 	for name, ms := range map[string]string{
 		"copy": "M3", "formats": "M3",
-		"peers": "M2", "pieces": "M2", "trackers": "M2", "recheck": "M2",
 		"cookies": "M3", "update": "M3", "pair": "M3", "uninstall": "M3",
 	} {
 		root.AddCommand(&cobra.Command{Use: name, Short: "(not implemented yet: " + ms + ")",
@@ -626,6 +626,120 @@ func limitsCmd() *cobra.Command {
 			return fmt.Sprintf("%.1f MiB/s", float64(n)/(1<<20))
 		}
 		return show(map[string]int64{"down": cur.Down, "up": cur.Up}, func() { fmt.Printf("down: %s\nup:   %s\n", h(cur.Down), h(cur.Up)) })
+	}
+	return c
+}
+
+func peersCmd() *cobra.Command {
+	return &cobra.Command{Use: "peers <id>", Short: "Connected peers of a running torrent", Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, a []string) error {
+			var ps []engine.Peer
+			if err := call("GET", "/v1/jobs/"+url.PathEscape(a[0])+"/peers", nil, &ps); err != nil {
+				return err
+			}
+			return show(ps, func() {
+				rows := [][]string{{"ADDRESS", "CLIENT", "SOURCE", "HAS", "DOWN", "UP"}}
+				for _, p := range ps {
+					rows = append(rows, []string{p.Addr, p.Client, p.Source, fmt.Sprintf("%.0f%%", p.Progress*100),
+						fmt.Sprintf("%.0f KiB/s", p.DownRate/1024), fmt.Sprintf("%.0f KiB/s", p.UpRate/1024)})
+				}
+				table(rows)
+			})
+		}}
+}
+
+func piecesCmd() *cobra.Command {
+	return &cobra.Command{Use: "pieces <id>", Short: "Piece map, availability and why a torrent is slow", Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, a []string) error {
+			var v jobs.PieceView
+			if err := call("GET", "/v1/jobs/"+url.PathEscape(a[0])+"/pieces", nil, &v); err != nil {
+				return err
+			}
+			return show(v, func() {
+				fmt.Printf("%s\n", pieceBar(v.Runs, v.Pieces, 64))
+				fmt.Printf("pieces %d/%d  peers %d  seeders %d  availability %.2f\n", v.Complete, v.Pieces, v.Peers, v.Seeders, v.Availability)
+				if v.Hint != "" {
+					fmt.Println(v.Hint)
+				}
+			})
+		}}
+}
+
+// pieceBar draws the piece map in width cells: █ complete, ▒ partly, ░ missing.
+func pieceBar(runs []engine.PieceRun, n, width int) string {
+	if n == 0 {
+		return ""
+	}
+	state := make([]byte, 0, n) // 2 complete, 1 partial, 0 missing
+	for _, r := range runs {
+		s := byte(0)
+		if r.Complete {
+			s = 2
+		} else if r.Partial {
+			s = 1
+		}
+		for range r.Length {
+			state = append(state, s)
+		}
+	}
+	var b strings.Builder
+	for c := range width {
+		lo, hi := c*len(state)/width, max((c+1)*len(state)/width, c*len(state)/width+1)
+		done, part := 0, 0
+		for _, s := range state[lo:min(hi, len(state))] {
+			done += int(s / 2)
+			part += int(s % 2)
+		}
+		switch {
+		case done == hi-lo:
+			b.WriteString("█")
+		case done+part > 0:
+			b.WriteString("▒")
+		default:
+			b.WriteString("░")
+		}
+	}
+	return b.String()
+}
+
+func trackersCmd() *cobra.Command {
+	c := &cobra.Command{Use: "trackers <id>", Short: "Show trackers of a running torrent; --add or --remove to change them", Args: cobra.ExactArgs(1)}
+	add := c.Flags().StringArray("add", nil, "tracker URL to add (repeatable)")
+	rm := c.Flags().StringArray("remove", nil, "tracker URL to remove (repeatable)")
+	c.RunE = func(_ *cobra.Command, a []string) error {
+		path := "/v1/jobs/" + url.PathEscape(a[0]) + "/trackers"
+		var tiers [][]string
+		if err := call("GET", path, nil, &tiers); err != nil {
+			return err
+		}
+		if len(*add) > 0 || len(*rm) > 0 {
+			var next [][]string
+			for _, tier := range tiers {
+				var keep []string
+				for _, u := range tier {
+					if !slices.Contains(*rm, u) {
+						keep = append(keep, u)
+					}
+				}
+				if len(keep) > 0 {
+					next = append(next, keep)
+				}
+			}
+			for _, u := range *add {
+				next = append(next, []string{u}) // each added tracker gets its own tier
+			}
+			if err := call("PUT", path, next, nil); err != nil {
+				return err
+			}
+			tiers = next
+		}
+		return show(tiers, func() {
+			for i, tier := range tiers {
+				for _, u := range tier {
+					fmt.Printf("tier %d  %s\n", i, u)
+				}
+			}
+		})
 	}
 	return c
 }

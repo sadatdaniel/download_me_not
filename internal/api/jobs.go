@@ -5,10 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 )
@@ -84,6 +86,54 @@ func (s *server) jobRoutes(api huma.API) {
 			DeleteFiles bool   `query:"deleteFiles"`
 		}) (*struct{}, error) {
 			if err := s.Jobs.Cancel(in.ID, in.DeleteFiles); err != nil {
+				return nil, jobErr(err)
+			}
+			return nil, nil
+		})
+	huma.Register(api, op("job-peers", "GET", "/v1/jobs/{id}/peers", "read", "Connected peers of a running torrent"),
+		func(ctx context.Context, in *idIn) (*struct{ Body []engine.Peer }, error) {
+			ps, err := s.Jobs.Peers(in.ID)
+			if err != nil {
+				return nil, jobErr(err)
+			}
+			return body(ps), nil
+		})
+	huma.Register(api, op("job-pieces", "GET", "/v1/jobs/{id}/pieces", "read", "Piece map, availability and a plain-language hint for a running torrent"),
+		func(ctx context.Context, in *idIn) (*struct{ Body jobs.PieceView }, error) {
+			v, err := s.Jobs.Pieces(in.ID)
+			if err != nil {
+				return nil, jobErr(err)
+			}
+			return body(v), nil
+		})
+	huma.Register(api, op("job-trackers", "GET", "/v1/jobs/{id}/trackers", "read", "Tracker tiers of a running torrent"),
+		func(ctx context.Context, in *idIn) (*struct{ Body [][]string }, error) {
+			tr, err := s.Jobs.Trackers(in.ID)
+			if err != nil {
+				return nil, jobErr(err)
+			}
+			return body(tr), nil
+		})
+	huma.Register(api, op("set-job-trackers", "PUT", "/v1/jobs/{id}/trackers", "write", "Replace the tracker tiers (kept across restarts)"),
+		func(ctx context.Context, in *struct {
+			ID   string `path:"id"`
+			Body [][]string
+		}) (*struct{}, error) {
+			for _, tier := range in.Body {
+				for _, u := range tier {
+					if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "udp://") {
+						return nil, huma.Error422UnprocessableEntity("tracker URLs must be http, https or udp: " + u)
+					}
+				}
+			}
+			if err := s.Jobs.SetTrackers(in.ID, in.Body); err != nil {
+				return nil, jobErr(err)
+			}
+			return nil, nil
+		})
+	huma.Register(api, op("recheck-job", "POST", "/v1/jobs/{id}/recheck", "write", "Verify a torrent's data on disk (runs in the background)"),
+		func(ctx context.Context, in *idIn) (*struct{}, error) {
+			if err := s.Jobs.Recheck(in.ID); err != nil {
 				return nil, jobErr(err)
 			}
 			return nil, nil

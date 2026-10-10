@@ -78,9 +78,10 @@ type webMeta struct {
 }
 
 type torMeta struct {
-	Torrent []byte `json:"torrent,omitempty"`
-	Magnet  string `json:"magnet,omitempty"`
-	Started bool   `json:"started"` // data may exist on disk: recheck before resuming
+	Torrent  []byte     `json:"torrent,omitempty"`
+	Magnet   string     `json:"magnet,omitempty"`
+	Started  bool       `json:"started"`            // data may exist on disk: recheck before resuming
+	Trackers [][]string `json:"trackers,omitempty"` // user-edited tracker list, re-applied on start
 }
 
 func New(o Options) *Manager {
@@ -502,6 +503,9 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 	r.mu.Lock()
 	r.tor = t
 	r.mu.Unlock()
+	if len(meta.Trackers) > 0 {
+		t.SetTrackers(meta.Trackers)
+	}
 	if t.Files() == nil {
 		store.SetJob(m.o.DB, j.ID, map[string]any{"state": "metadata"})
 		wctx, cancel := context.WithTimeout(ctx, m.o.MetadataTimeout)
@@ -561,6 +565,7 @@ type Progress struct {
 	Total int64   `json:"total"`
 	Rate  float64 `json:"rate"` // bytes/s
 	Peers int     `json:"peers,omitempty"`
+	Hint  string  `json:"hint,omitempty"` // torrents: why it is slow or stalled
 }
 
 // Progress snapshots the running jobs (for SSE).
@@ -578,6 +583,7 @@ func (m *Manager) Progress() []Progress {
 		case r.tor != nil:
 			s := r.tor.Stats()
 			p.Done, p.Peers = s.Completed, s.Peers
+			p.Hint = m.hint(r.tor.Swarm(), s)
 			if s.Total > 0 {
 				p.Total = s.Total
 			}

@@ -82,6 +82,16 @@ func TestEngine(t *testing.T) {
 	}
 	rd.Close()
 
+	if sw := lt.Swarm(); sw.Peers != 1 || sw.Availability < 1 {
+		t.Fatalf("swarm with one seeder: %+v", sw)
+	}
+	if ps := lt.Peers(); len(ps) != 1 || ps[0].Progress != 1 {
+		t.Fatalf("peers: %+v", ps)
+	}
+	lt.SetTrackers([][]string{{"http://tracker.invalid/announce"}})
+	if tr := lt.Trackers(); len(tr) != 1 || tr[0][0] != "http://tracker.invalid/announce" {
+		t.Fatalf("trackers: %v", tr)
+	}
 	lt.Start()
 	select {
 	case <-lt.Done():

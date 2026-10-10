@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -259,5 +260,24 @@ func TestTorrentJob(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "clip.bin")); !os.IsNotExist(err) {
 		t.Fatal("cancel --delete-files left the file")
+	}
+}
+
+func TestHint(t *testing.T) {
+	m := New(Options{})
+	for _, c := range []struct {
+		sw   engine.Swarm
+		st   engine.Stats
+		want string
+	}{
+		{engine.Swarm{}, engine.Stats{}, "Fetching metadata"},
+		{engine.Swarm{Pieces: 10}, engine.Stats{Total: 100}, "No peers connected"},
+		{engine.Swarm{Pieces: 10, Peers: 3, Availability: 0.6}, engine.Stats{Total: 100}, "No complete copy"},
+		{engine.Swarm{Pieces: 10, Peers: 3, Seeders: 1, Availability: 1.2}, engine.Stats{Total: 100, DownRate: 100}, "sending little data"},
+		{engine.Swarm{Pieces: 10, Peers: 3, Seeders: 1}, engine.Stats{Total: 100, Completed: 100}, "Complete"},
+	} {
+		if got := m.hint(c.sw, c.st); !strings.Contains(got, c.want) {
+			t.Errorf("%+v: %q, want %q", c.sw, got, c.want)
+		}
 	}
 }
