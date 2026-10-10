@@ -4,7 +4,8 @@
 name: dmn-dev
 
 x-go: &go
-  image: golang:1.26
+  image: dmn-dev:latest
+  build: { context: ., dockerfile: Dockerfile.dev }
   working_dir: /src
   volumes:
     - .:/src

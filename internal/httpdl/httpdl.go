@@ -39,6 +39,7 @@ type State struct {
 	Ranges   bool      `json:"ranges"`
 	ETag     string    `json:"etag,omitempty"`
 	LastMod  string    `json:"lastMod,omitempty"`
+	Type     string    `json:"type,omitempty"` // Content-Type of the probe response
 	Name     string    `json:"name"`
 	Segments []Segment `json:"segments,omitempty"`
 }
@@ -91,7 +92,7 @@ func Probe(ctx context.Context, c *http.Client, url string, h http.Header) (Stat
 		return State{}, err
 	}
 	resp.Body.Close()
-	st := State{URL: url, Size: -1, ETag: resp.Header.Get("ETag"), LastMod: resp.Header.Get("Last-Modified")}
+	st := State{URL: url, Size: -1, ETag: resp.Header.Get("ETag"), LastMod: resp.Header.Get("Last-Modified"), Type: resp.Header.Get("Content-Type")}
 	switch resp.StatusCode {
 	case http.StatusPartialContent:
 		// Content-Range: bytes 0-0/12345

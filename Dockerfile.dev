@@ -1,0 +1,11 @@
+# Dev/test image: Go plus the helper tools, so integration tests run offline (AGENTS.md rule 7).
+# Network is used only here, at build time, to fetch packages and the yt-dlp release binary.
+FROM golang:1.26
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ffmpeg aria2 >/dev/null && rm -rf /var/lib/apt/lists/*
+ARG YTDLP_VERSION=latest
+RUN set -eux; arch="$(uname -m)"; f=yt-dlp_linux; [ "$arch" = aarch64 ] && f=yt-dlp_linux_aarch64; \
+    base=https://github.com/yt-dlp/yt-dlp/releases/${YTDLP_VERSION}/download; \
+    [ "$YTDLP_VERSION" != latest ] && base=https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}; \
+    curl -fsSL -o /usr/local/bin/yt-dlp "$base/$f"; \
+    curl -fsSL "$base/SHA2-256SUMS" | grep " $f\$" | sed "s| $f\$| /usr/local/bin/yt-dlp|" | sha256sum -c -; \
+    chmod +x /usr/local/bin/yt-dlp; yt-dlp --version
