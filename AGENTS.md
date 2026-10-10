@@ -39,18 +39,23 @@ docker compose -f compose.dev.yaml run --rm test go vet ./...
 
 ```
 docs/              scope.md (spec + decisions §17 + verified facts §19), STATUS.md (progress, next step),
-                   architecture.md (breakage map, self-healing rules), engine-spike.md (torrent evidence)
+                   architecture.md (breakage map, self-healing rules), engine-spike.md (torrent evidence),
+                   benchmark.md (downloader vs aria2c)
 cmd/dmn/           the one binary: `serve` + CLI (cobra); unbuilt commands are stubs naming their milestone
 internal/api       huma /v1 API, token scopes read<write<admin, SSE, signed /v1/raw streaming
 internal/config    koanf: flags > env DMN_* > file > defaults; atomic Set
 internal/store     SQLite (modernc), embedded migrations on user_version, backup before migrating
 internal/fsapi     folder API on os.Root (blocks ../symlink escape), Range, HMAC links
 internal/engine    torrent Engine interface + anacrolix implementation (spike lessons inside)
+internal/httpdl    IDM-style downloader: speed-aware work stealing, slow-connection watchdog, resume, If-Range
+internal/jobs      crash-only job manager: DB holds desired state, reconcile loop runs runners (recover per job)
+internal/selftest  offline end-to-end checks behind `dmn doctor --selftest`
 internal/netguard  SSRF-guarded dialer/client + guarded proxy for yt-dlp
 internal/provider  built-in sources/destinations, JSON Schema settings, live toggles
 internal/tools     helper tool detection (doctor)
 api/openapi.json   committed API contract (snapshot test fails on any change)
 spike/engine/      step-1 spike, kept as evidence; not imported
+spike/bench/       httpdl vs aria2c benchmark (docs/benchmark.md)
 ```
 
 ## How to approach a problem

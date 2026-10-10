@@ -1,7 +1,7 @@
 # Status
 
-**Current state:** Step 2 done, CI green (spike suite runs manually only). Working on M1.
-**Next action:** M1 in this order (tick as you go): see the M1 checklist below.
+**Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
+**Next action:** Write the M2 plan (torrent management, §5.9 "ours" items in engine-spike.md, plus swarm memory) into the checklist below, then build it. Open M1 leftovers: FTP (deferred, see scope §17) and a global speed limit (moves to M2 `limits`).
 **Blockers:** none.
 
 ## Checklist
@@ -41,7 +41,9 @@
   - [x] fsapi: ZIP folder download, copy (API /v1/zip, /v1/fs/copy; CLI zip, cp)
   - [x] `doctor --selftest`: local HTTP plus loopback torrent, offline
   - [x] Benchmark against aria2c (docs/benchmark.md): tie on a clean network, ~30% faster with slow routes
-  - [ ] Later in M1: FTP (jlaffaye/ftp), global rate limit, re-resolve expired links
+  - [x] Expired links: every request goes to the original URL, so expiring redirect targets (signed CDN links) refresh themselves. Re-resolving pages comes with the video provider (M3)
+  - [ ] FTP: deferred (rare; passive-mode data connections are an extra SSRF surface). Build when needed with jlaffaye/ftp and a guarded dial function for both connections
+  - [ ] Global speed limit: moves to M2 together with `limits`
 - [ ] M2 torrent management (§5.9 "ours" items from engine-spike.md)
 - [ ] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API
 - [ ] M3 integrations: yt-dlp, rclone and Drive (device flow, `drive.file`), CertMagic, install.sh, self-update, `pair`
