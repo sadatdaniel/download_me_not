@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/httpdl"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/video"
@@ -21,10 +22,11 @@ func (m *Manager) runVideo(ctx context.Context, r *runner, j store.Job) error {
 	if m.o.Video == nil {
 		return errors.New("video downloads are not available")
 	}
-	vr := m.o.Video()
-	if vr == nil {
-		return errors.New("yt-dlp is not installed: run `dmn doctor`")
+	vr, cleanup, err := m.videoRunner(j.Source)
+	if err != nil {
+		return err
 	}
+	defer cleanup()
 	var meta videoMeta
 	json.Unmarshal(j.Meta, &meta)
 	r.mu.Lock()
@@ -72,6 +74,7 @@ func (m *Manager) Probe(ctx context.Context, src string, header map[string]strin
 	for k, v := range header {
 		hdr.Set(k, v)
 	}
+	m.withCookies(src, hdr)
 	st, err := httpdl.Probe(ctx, m.o.Client, src, hdr)
 	if err != nil {
 		return ProbeResult{}, err
@@ -79,13 +82,47 @@ func (m *Manager) Probe(ctx context.Context, src string, header map[string]strin
 	if !strings.HasPrefix(st.Type, "text/html") || m.o.Video == nil || (m.o.Allowed != nil && !m.o.Allowed("video")) {
 		return ProbeResult{Kind: "web", Name: st.Name, Size: max(st.Size, 0)}, nil
 	}
-	vr := m.o.Video()
-	if vr == nil {
-		return ProbeResult{}, errors.New("this is a web page and yt-dlp is not installed: run `dmn doctor`")
+	vr, cleanup, err := m.videoRunner(src)
+	if err != nil {
+		return ProbeResult{}, err
 	}
+	defer cleanup()
 	info, err := vr.Probe(ctx, src)
 	if err != nil {
 		return ProbeResult{}, err
 	}
 	return ProbeResult{Kind: "video", Video: &info, Presets: video.Presets}, nil
+}
+
+// withCookies adds the stored cookies and matching User-Agent for src unless the request already
+// carries its own (e.g. sent by the browser extension).
+func (m *Manager) withCookies(src string, h http.Header) {
+	if m.o.Cookies == nil || h.Get("Cookie") != "" {
+		return
+	}
+	cs, ua := m.o.Cookies.For(src)
+	if len(cs) > 0 {
+		h.Set("Cookie", cookies.Header(cs))
+	}
+	if ua != "" && h.Get("User-Agent") == "" {
+		h.Set("User-Agent", ua)
+	}
+}
+
+// videoRunner returns yt-dlp's runner with this URL's cookies in a temporary file (deleted by done).
+func (m *Manager) videoRunner(src string) (*video.Runner, func(), error) {
+	vr := m.o.Video()
+	if vr == nil {
+		return nil, nil, errors.New("yt-dlp is not installed: run `dmn doctor`")
+	}
+	r := *vr
+	done := func() {}
+	if m.o.Cookies != nil {
+		p, ua, cleanup, err := m.o.Cookies.TempFile(src)
+		if err != nil {
+			return nil, nil, err
+		}
+		r.Cookies, r.UA, done = p, ua, cleanup
+	}
+	return &r, done, nil
 }

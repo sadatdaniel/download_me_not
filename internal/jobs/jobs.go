@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/httpdl"
 	"github.com/sadatdaniel/download_me_not/internal/store"
@@ -52,7 +53,8 @@ type Options struct {
 	TorrentGate func() string
 	// Video returns how to run yt-dlp, or nil when it isn't installed. Called per job, so a tool
 	// installed while the server runs is picked up.
-	Video func() *video.Runner
+	Video   func() *video.Runner
+	Cookies *cookies.Store // imported browser cookies, attached to https requests; nil = none
 }
 
 var (
@@ -509,6 +511,7 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 	for k, v := range meta.Header {
 		hdr.Set(k, v)
 	}
+	m.withCookies(j.Source, hdr) // looked up per run, so cookies never sit in the job database
 	save := func(f map[string]any) error {
 		b, _ := json.Marshal(meta)
 		f["meta"] = json.RawMessage(b)

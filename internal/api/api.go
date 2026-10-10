@@ -22,6 +22,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 
 	"github.com/sadatdaniel/download_me_not/internal/config"
+	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/limits"
@@ -39,6 +40,7 @@ type Deps struct {
 	Providers *provider.Registry
 	Jobs      *jobs.Manager
 	Limits    *limits.Limits
+	Cookies   *cookies.Store
 }
 
 var rank = map[string]int{"read": 1, "write": 2, "admin": 3}
@@ -138,6 +140,7 @@ func (s *server) routes(api huma.API) {
 			return body(jobs), err
 		})
 	s.jobRoutes(api)
+	s.cookieRoutes(api)
 
 	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
 		map[string]any{"progress": []jobs.Progress{}},

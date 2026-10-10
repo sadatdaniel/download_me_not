@@ -24,6 +24,7 @@ import (
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
 
+	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/video"
@@ -501,5 +502,35 @@ func TestVideoJob(t *testing.T) {
 	}
 	if _, _, err := m.Add(AddRequest{Source: srv.URL + "/watch", Format: "--exec=x"}); err == nil {
 		t.Fatal("bad format accepted")
+	}
+}
+
+func TestCookiesSentOverHTTPS(t *testing.T) {
+	data := payload(64<<10, 8)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie("sid"); err != nil || c.Value != "s3" || r.UserAgent() != "TestBrowser/1" {
+			http.Error(w, "login required", http.StatusForbidden)
+			return
+		}
+		http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	ck, err := cookies.Open(filepath.Join(dir, "cookies"), filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ck.Import("127.0.0.1", strings.NewReader("127.0.0.1\tFALSE\t/\tTRUE\t0\tsid\ts3\n"), "TestBrowser/1")
+	db, _ := store.Open(filepath.Join(dir, "j.db"))
+	defer db.Close()
+	m := New(Options{DB: db, Downloads: dir, Client: srv.Client(), Tick: 20 * time.Millisecond, Cookies: ck})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- m.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	j, _, _ := m.Add(AddRequest{Source: srv.URL + "/private.bin"})
+	j = waitState(t, m, j.ID, "done", 10*time.Second)
+	if strings.Contains(string(j.Meta), "s3") {
+		t.Fatal("cookie value stored in the job database")
 	}
 }

@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** M3.2 cookies (see the checklist).
+**Next action:** M3.3 Google Drive. Needs the user's own Google Cloud OAuth client ID ("TV and Limited Input devices" type, drive.file scope); ask before starting the Google side, but rclone plumbing and a fake OAuth server test can come first.
 **Blockers:** none.
 
 ## Checklist
@@ -55,7 +55,7 @@
 - [x] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API
 - [ ] M3 integrations: yt-dlp, rclone and Drive (device flow, `drive.file`), CertMagic, install.sh, self-update, `pair`
   - [x] M3.1 video provider (managed install and self-update of yt-dlp moved to M3.5): probe (`-J`) to formats and presets, download as a job with progress, all traffic through the netguard proxy, `formats` CLI. Tests: yt-dlp's generic extractor on a local page with our own ffmpeg-made video. **Never YouTube from the dev machine**
-  - [ ] M3.2 cookies: import a Netscape cookie file per domain, AES-GCM at rest (key file 0600 in the config dir), passed to yt-dlp and httpdl, never logged or returned
+  - [x] M3.2 cookies: import a Netscape cookie file per domain, AES-GCM at rest (key file 0600 in the config dir), passed to yt-dlp and httpdl, never logged or returned
   - [ ] M3.3 Google Drive: rclone as a managed tool; OAuth device flow with the drive.file scope (needs the user's own Google Cloud client ID); copy-to-drive jobs; verify; optional delete-local
   - [ ] M3.4 HTTPS: self-signed with a fingerprint, CertMagic for domains (Pebble for local tests), `pair` QR (URL, token, fingerprint)
   - [ ] M3.5 install.sh, systemd unit, uninstall; self-update (go-selfupdate, ECDSA, confirm-after-boot); managed tool updates; public releases repo

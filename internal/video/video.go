@@ -62,6 +62,7 @@ type Runner struct {
 	Cookies string // Netscape cookie file for this request; "" = none
 	FFmpeg  string // directory or path of ffmpeg; "" = PATH
 	Deno    string // path of deno for YouTube's JS challenges; "" = yt-dlp's default lookup
+	UA      string // User-Agent that matches the imported cookies; "" = yt-dlp default
 }
 
 func (r Runner) base() []string {
@@ -71,6 +72,9 @@ func (r Runner) base() []string {
 	}
 	if r.Cookies != "" {
 		a = append(a, "--cookies", r.Cookies)
+	}
+	if r.UA != "" {
+		a = append(a, "--user-agent", r.UA)
 	}
 	if r.FFmpeg != "" {
 		a = append(a, "--ffmpeg-location", r.FFmpeg)

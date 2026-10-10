@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/sadatdaniel/download_me_not/internal/config"
+	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/limits"
@@ -38,8 +39,9 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	f, _ := fsapi.New(dl, []byte("key"))
 	cfgPath := filepath.Join(dir, "config.yaml")
 	reg := provider.NewRegistry(nil, dir)
+	ck, _ := cookies.Open(filepath.Join(dir, "cookies"), filepath.Join(dir, "cookie.key"))
 	jm := jobs.New(jobs.Options{DB: db, Downloads: dl, Client: http.DefaultClient, Allowed: reg.Enabled})
-	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm, Limits: limits.New(0, 0)})
+	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm, Limits: limits.New(0, 0), Cookies: ck})
 	srv := httptest.NewServer(h)
 	t.Cleanup(func() { srv.Close(); db.Close(); f.Close() })
 	return srv, cfgPath
@@ -94,6 +96,9 @@ func TestAuthAndScopes(t *testing.T) {
 		{"GET", "/v1/jobs/nope/peers", "read-tok", "", 404},
 		{"PUT", "/v1/jobs/nope/trackers", "write-tok", `[["file:///etc"]]`, 422},
 		{"GET", "/v1/raw/video.mp4", "", "", 401},
+		{"POST", "/v1/cookies", "write-tok", `{"domain":"example.com","content":"x"}`, 403},
+		{"POST", "/v1/cookies", "admin-tok", `{"domain":"example.com","content":".example.com\tTRUE\t/\tTRUE\t0\tsid\tSECRETVALUE"}`, 200},
+		{"DELETE", "/v1/cookies/nope.org", "admin-tok", "", 404},
 		{"PUT", "/v1/limits", "read-tok", `{"down":1000,"up":0}`, 403},
 		{"PUT", "/v1/limits", "write-tok", `{"down":1000,"up":0}`, 204},
 		{"PUT", "/v1/limits", "write-tok", `{"down":-1,"up":0}`, 422},
@@ -169,5 +174,14 @@ func TestOpenAPISnapshot(t *testing.T) {
 	want, err := os.ReadFile(path)
 	if err != nil || string(want) != got {
 		t.Fatal("API changed: review it, then run UPDATE_OPENAPI=1 go test ./internal/api/ (breaking /v1 changes need /v2)")
+	}
+}
+
+func TestCookieValuesNeverReturned(t *testing.T) {
+	srv, _ := newTestServer(t)
+	call(t, srv, "POST", "/v1/cookies", "admin-tok", `{"domain":"example.com","content":".example.com\tTRUE\t/\tTRUE\t0\tsid\tSECRETVALUE"}`)
+	code, b := call(t, srv, "GET", "/v1/cookies", "read-tok", "")
+	if code != 200 || !strings.Contains(b, "example.com") || strings.Contains(b, "SECRETVALUE") {
+		t.Fatalf("%d %s", code, b)
 	}
 }

@@ -30,6 +30,7 @@ import (
 
 	"github.com/sadatdaniel/download_me_not/internal/api"
 	"github.com/sadatdaniel/download_me_not/internal/config"
+	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
@@ -61,10 +62,10 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd())
 	for name, ms := range map[string]string{
-		"copy":    "M3",
-		"cookies": "M3", "update": "M3", "pair": "M3", "uninstall": "M3",
+		"copy":   "M3",
+		"update": "M3", "pair": "M3", "uninstall": "M3",
 	} {
 		root.AddCommand(&cobra.Command{Use: name, Short: "(not implemented yet: " + ms + ")",
 			DisableFlagParsing: true,
@@ -144,6 +145,11 @@ func serveCmd() *cobra.Command {
 		reg := provider.NewRegistry(pcfg, cfg.Paths.Data)
 		// The torrent engine starts with the first torrent job, so a server that only does web
 		// downloads never opens a torrent port or joins the DHT.
+		// The cookie key sits next to the config file, apart from the data folder (scope §5.6).
+		ck, err := cookies.Open(filepath.Join(cfg.Paths.Data, "cookies"), filepath.Join(filepath.Dir(cfgPath), "cookie.key"))
+		if err != nil {
+			return fmt.Errorf("cookies: %w", err)
+		}
 		lim := limits.New(cfg.Limits.Down, cfg.Limits.Up)
 		bl := &engine.Blocklist{}
 		if src := settingStr(cfg, "torrent", "blocklist", ""); src != "" {
@@ -159,10 +165,11 @@ func serveCmd() *cobra.Command {
 			NewEngine:   func() (engine.Engine, error) { return newEngine(cfg, lim, bl) },
 			TorrentGate: killSwitch(settingStr(cfg, "torrent", "bind", "")),
 			Video:       videoRunner(ctx, cfg.Paths.Data),
+			Cookies:     ck,
 		})
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
-		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim})
+		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck})
 		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()
@@ -1069,4 +1076,41 @@ func sizeStr(n int64) string {
 		return "-"
 	}
 	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+}
+
+func cookiesCmd() *cobra.Command {
+	c := &cobra.Command{Use: "cookies", Short: "Browser cookies for sites that need a login (stored encrypted, sent over HTTPS only)"}
+	imp := &cobra.Command{Use: "import <cookies.txt>", Short: "Import a Netscape cookies.txt for one domain", Args: cobra.ExactArgs(1)}
+	domain := imp.Flags().String("domain", "", "domain the cookies are for, e.g. example.com (required)")
+	ua := imp.Flags().String("user-agent", "", "the browser's User-Agent, sent together with the cookies")
+	imp.MarkFlagRequired("domain")
+	imp.RunE = func(_ *cobra.Command, a []string) error {
+		b, err := os.ReadFile(a[0])
+		if err != nil {
+			return err
+		}
+		var out map[string]int
+		if err := call("POST", "/v1/cookies", map[string]string{"domain": *domain, "content": string(b), "userAgent": *ua}, &out); err != nil {
+			return err
+		}
+		return show(out, func() { fmt.Printf("%d cookies imported for %s\n", out["imported"], *domain) })
+	}
+	list := &cobra.Command{Use: "list", RunE: func(*cobra.Command, []string) error {
+		var l []cookies.Summary
+		if err := call("GET", "/v1/cookies", nil, &l); err != nil {
+			return err
+		}
+		return show(l, func() {
+			rows := [][]string{{"DOMAIN", "COOKIES", "EXPIRED", "USER-AGENT"}}
+			for _, s := range l {
+				rows = append(rows, []string{s.Domain, fmt.Sprint(s.Count), fmt.Sprint(s.Expired), fmt.Sprint(s.UserAgent)})
+			}
+			table(rows)
+		})
+	}}
+	rm := &cobra.Command{Use: "rm <domain>", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, a []string) error {
+		return call("DELETE", "/v1/cookies/"+url.PathEscape(a[0]), nil, nil)
+	}}
+	c.AddCommand(imp, list, rm)
+	return c
 }
