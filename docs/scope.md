@@ -519,7 +519,7 @@ Open-core: open-source the server and CLI, keep the paid Android app closed.
 | No built-in WireGuard for now; the server can bind to a VPN interface | Decided |
 | Prefer simplicity: proven components, hands-off maintenance, self-updating | Decided as a principle |
 | HTTPS access modes, QR pairing, one-command installer, single config file, clean uninstall | Proposed, needs confirmation |
-| Torrent engine: pure-Go first, libtorrent as the fallback after a spike | Proposed, needs confirmation |
+| Torrent engine: pure-Go first, libtorrent as the fallback after a spike | **Decided (2026-10-10): anacrolix/torrent v1.61 kept** after the spike (docs/engine-spike.md); v2-only torrents rejected until fixed upstream |
 | Sources and destinations are providers with on/off toggles and server-generated settings; built-in only in the MVP | Proposed, needs confirmation |
 | CLI controls | Decided as a goal |
 | YouTube links with format and quality choice | Decided as a goal |
@@ -563,7 +563,7 @@ Answers to "verify" items, checked 2026-10-10 against the projects' own pages. R
 
 | Item | Answer | Consequence |
 |---|---|---|
-| anacrolix/torrent | MPL-2.0, needs Go 1.25+. The README lists BitTorrent v2, web seeds, protocol encryption, SOCKS5 for outgoing peer connections, and readers with seeking and readahead. Its config has `IPBlocklist`, global `UploadRateLimiter`/`DownloadRateLimiter`, `NoDefaultPortForwarding` (UPnP), `DisableIPv6`, `DisableUTP`, `DisablePEX`, `NoDHT`, `LocalServiceDiscovery`, `HeaderObfuscationPolicy`, and `HTTPDialContext`/`TrackerDialContext`. | Per-torrent rate limits are not built in: our layer. uTP pulls in cgo `go-libutp`, so the spike must check what `CGO_ENABLED=0` gives. Hybrid torrents are not mentioned: spike item. |
+| anacrolix/torrent | MPL-2.0, needs Go 1.25+. The README lists BitTorrent v2, web seeds, protocol encryption, SOCKS5 for outgoing peer connections, and readers with seeking and readahead. Its config has `IPBlocklist`, global `UploadRateLimiter`/`DownloadRateLimiter`, `NoDefaultPortForwarding` (UPnP), `DisableIPv6`, `DisableUTP`, `DisablePEX`, `NoDHT`, `HeaderObfuscationPolicy`, and `HTTPDialContext`/`TrackerDialContext`. | Per-torrent rate limits are not built in: our layer. uTP pulls in cgo `go-libutp`, so the spike must check what `CGO_ENABLED=0` gives. Hybrid torrents are not mentioned: spike item. Spike result (docs/engine-spike.md): hybrid works, v2-only panics, no LSD in v1.61, uTP is pure Go without cgo. |
 | anacrolix piece-completion storage | The sqlite path uses a cgo-backed crawshaw library | Use the bolt completion (pure Go) |
 | Archive library (open question 11) | mholt/archives: MIT, pure Go, reads zip, tar (+ compressed), 7z and rar | Use it. Check the rar decoder's licence when pinning |
 | Update library (open question 9) | creativeprojects/go-selfupdate: MIT, GitHub/Gitea/GitLab/HTTP sources, SHA-256 checksum file, ECDSA `.sig`, GoReleaser naming, rollback on a failed replace | Use it |

@@ -21,3 +21,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# self-generated test fixtures are allowed
+!spike/engine/testdata/*.torrent
