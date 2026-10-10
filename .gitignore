@@ -1,0 +1,23 @@
+# build output
+/dist/
+/bin/
+/dmn
+*.exe
+
+# runtime data, downloads, secrets
+/data/
+/downloads/
+*.torrent
+.env
+.env.*
+*.cookies
+cookies.txt
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
