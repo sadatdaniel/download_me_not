@@ -12,6 +12,11 @@ jobs:
         with: { go-version-file: go.mod }
       - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - run: go vet ./...
+      # Helper tools for the video tests (they only use local pages and generated clips).
+      - run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          sudo curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux
+          sudo chmod +x /usr/local/bin/yt-dlp && yt-dlp --version
       - uses: dominikh/staticcheck-action@v1
         with: { install-go: false }
       # Tests never touch the public network (loopback peers, DHT off), same as locally.
