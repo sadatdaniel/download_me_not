@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
 )
 
@@ -27,6 +28,7 @@ type Engine interface {
 	// Add takes a magnet URI or .torrent bytes. Adding a known infohash returns the existing torrent and false.
 	Add(magnetOrTorrent []byte) (Torrent, bool, error)
 	Get(infohash string) (Torrent, bool)
+	Port() int // listening port for peers (for doctor and firewall hints)
 	Close() error
 }
 
@@ -183,6 +185,8 @@ func (e *engine) Get(infohash string) (Torrent, bool) {
 	}
 	return &tor{t: t, dataDir: e.dataDir}, true
 }
+
+func (e *engine) Port() int { return e.cl.LocalPort() }
 
 func (e *engine) Close() error { return errors.Join(e.cl.Close()...) }
 
@@ -352,4 +356,26 @@ func InfoHash(b []byte) (string, error) {
 		return "", ErrV2Only
 	}
 	return mi.HashInfoBytes().HexString(), nil
+}
+
+// Create builds a v1 .torrent for a local file or folder (self-test, and creating torrents later).
+func Create(path string, trackers []string) ([]byte, error) {
+	info := metainfo.Info{PieceLength: 256 << 10}
+	if err := info.BuildFromFilePath(path); err != nil {
+		return nil, err
+	}
+	ib, err := bencode.Marshal(info)
+	if err != nil {
+		return nil, err
+	}
+	mi := metainfo.MetaInfo{InfoBytes: ib}
+	if len(trackers) > 0 {
+		mi.Announce = trackers[0]
+		mi.AnnounceList = [][]string{trackers}
+	}
+	var buf bytes.Buffer
+	if err := mi.Write(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }

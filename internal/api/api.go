@@ -9,8 +9,11 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
+	"mime"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -92,6 +95,7 @@ func New(d Deps) (http.Handler, huma.API) {
 	s.routes(api)
 	mux.HandleFunc("GET /v1/raw/{path...}", s.raw)
 	mux.HandleFunc("GET /v1/jobs/{id}/stream", s.stream)
+	mux.HandleFunc("GET /v1/zip/{path...}", s.zip)
 	return mux, api
 }
 
@@ -194,6 +198,18 @@ func (s *server) routes(api huma.API) {
 			}
 			return nil, nil
 		})
+	huma.Register(api, op("fs-copy", "POST", "/v1/fs/copy", "write", "Copy a file or folder (never overwrites)"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				From string `json:"from" minLength:"1"`
+				To   string `json:"to" minLength:"1"`
+			}
+		}) (*struct{}, error) {
+			if err := s.FS.Copy(in.Body.From, in.Body.To); err != nil {
+				return nil, fsErr(err)
+			}
+			return nil, nil
+		})
 	huma.Register(api, op("fs-delete", "DELETE", "/v1/fs", "write", "Delete a file or folder"),
 		func(ctx context.Context, in *struct {
 			Path string `query:"path" required:"true"`
@@ -261,4 +277,34 @@ func (s *server) raw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.FS.Serve(w, r, p)
+}
+
+// zip downloads a folder as a ZIP (read token or a signed link to the folder).
+func (s *server) zip(w http.ResponseWriter, r *http.Request) {
+	p := r.PathValue("path")
+	q := r.URL.Query()
+	if q.Get("sig") != "" {
+		if !s.FS.Verify(p, q.Get("exp"), q.Get("sig")) {
+			http.Error(w, "invalid or expired link", http.StatusForbidden)
+			return
+		}
+	} else if rank[s.scope(r.Header.Get("Authorization"))] < rank["read"] {
+		http.Error(w, "missing or invalid token", http.StatusUnauthorized)
+		return
+	}
+	e, err := s.FS.Stat(p)
+	if err != nil || !e.Dir {
+		http.Error(w, "not a folder", http.StatusNotFound)
+		return
+	}
+	name := e.Name
+	if name == "/" {
+		name = "downloads"
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name + ".zip"}))
+	if err := s.FS.Zip(w, p); err != nil {
+		// Headers are sent; the client sees a truncated ZIP, which fails its checksum.
+		fmt.Fprintln(os.Stderr, "zip:", err)
+	}
 }

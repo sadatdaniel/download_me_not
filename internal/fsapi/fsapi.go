@@ -3,10 +3,12 @@
 package fsapi
 
 import (
+	"archive/zip"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -199,4 +201,91 @@ func (f *FS) mac(c, exp string) string {
 	m := hmac.New(sha256.New, f.key)
 	m.Write([]byte(c + "\x00" + exp))
 	return hex.EncodeToString(m.Sum(nil))
+}
+
+// Copy copies a file or a folder tree inside the root. It never overwrites.
+func (f *FS) Copy(from, to string) error {
+	a, err := clean(from)
+	if err != nil {
+		return err
+	}
+	b, err := clean(to)
+	if err != nil {
+		return err
+	}
+	if a == "." || b == "." || b == a || strings.HasPrefix(b, a+"/") {
+		return ErrBadPath // no root, no copying a folder into itself
+	}
+	if _, err := f.root.Lstat(b); err == nil {
+		return fs.ErrExist
+	}
+	return fs.WalkDir(f.root.FS(), a, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		dst := b + strings.TrimPrefix(p, a)
+		if d.IsDir() {
+			return f.root.Mkdir(dst, 0o755)
+		}
+		if !d.Type().IsRegular() {
+			return nil // skip symlinks and devices
+		}
+		in, err := f.root.Open(p)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		out, err := f.root.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, in); err != nil {
+			out.Close()
+			return err
+		}
+		return out.Close()
+	})
+}
+
+// Zip streams a folder as a ZIP. Entries are stored, not compressed: media doesn't shrink and
+// storing keeps it fast on small devices. archive/zip switches to ZIP64 for large files.
+func (f *FS) Zip(w io.Writer, p string) error {
+	c, err := clean(p)
+	if err != nil {
+		return err
+	}
+	zw := zip.NewWriter(w)
+	err = fs.WalkDir(f.root.FS(), c, func(fp string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return err
+		}
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+		h, err := zip.FileInfoHeader(fi)
+		if err != nil {
+			return err
+		}
+		h.Name = strings.TrimPrefix(strings.TrimPrefix(fp, c), "/")
+		if c == "." {
+			h.Name = fp
+		}
+		h.Method = zip.Store
+		zf, err := zw.CreateHeader(h)
+		if err != nil {
+			return err
+		}
+		in, err := f.root.Open(fp)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		_, err = io.Copy(zf, in)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return zw.Close()
 }

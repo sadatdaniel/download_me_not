@@ -1,6 +1,8 @@
 package fsapi
 
 import (
+	"archive/zip"
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -117,5 +119,33 @@ func TestServeRangeAndSign(t *testing.T) {
 	v, _ = url.ParseQuery(old)
 	if f.Verify("/sub/a.txt", v.Get("exp"), v.Get("sig")) {
 		t.Fatal("expired signature accepted")
+	}
+}
+
+func TestCopyAndZip(t *testing.T) {
+	f, root, _ := setup(t)
+	if err := f.Copy("/sub", "/sub2"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "sub2", "a.txt")); string(b) != "hello world" {
+		t.Fatalf("copy: %q", b)
+	}
+	for _, bad := range [][2]string{{"/sub", "/sub2"}, {"/sub", "/sub/inner"}, {"/", "/x"}, {"/abs-link", "/stolen"}} {
+		if f.Copy(bad[0], bad[1]) == nil {
+			t.Errorf("Copy(%q, %q) allowed", bad[0], bad[1])
+		}
+	}
+	var buf bytes.Buffer
+	if err := f.Zip(&buf, "/sub2"); err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil || len(zr.File) != 1 || zr.File[0].Name != "a.txt" {
+		t.Fatalf("zip: %v %v", err, zr)
+	}
+	buf.Reset()
+	f.Zip(&buf, "/") // whole root: symlinks pointing outside are skipped
+	if bytes.Contains(buf.Bytes(), []byte("outside")) {
+		t.Fatal("zip followed a symlink out of the root")
 	}
 }

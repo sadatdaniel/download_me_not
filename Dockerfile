@@ -14,5 +14,6 @@ USER dmn
 ENV DMN_CONFIG=/config/config.yaml DMN_PATHS_DATA=/data DMN_PATHS_DOWNLOADS=/downloads DMN_SERVER_LISTEN=0.0.0.0:8080
 VOLUME ["/config", "/data", "/downloads"]
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:8080/v1/health >/dev/null || exit 1
 ENTRYPOINT ["dmn"]
 CMD ["serve"]

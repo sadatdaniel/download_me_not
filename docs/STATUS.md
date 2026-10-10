@@ -38,8 +38,8 @@
   - [x] internal/httpdl: probe (size, ranges, ETag, filename), dynamic segmentation (work stealing, split the largest remainder), resume from a saved segment map, retry with backoff, header passthrough, single-connection stream mode, .part then rename without overwrite
   - [x] internal/jobs: crash-only manager; DB keeps desired state (`want`), a reconcile loop starts and stops runners (recover per job), max active, progress snapshots to SSE; torrent jobs start the engine lazily
   - [x] API + CLI: add (URL, magnet, .torrent), get, pause, resume, mode, cancel; /v1/jobs/{id}/stream for files still downloading (blocks until bytes arrive)
-  - [ ] fsapi: ZIP folder download, copy
-  - [ ] `doctor --selftest`: local HTTP plus loopback torrent, offline
+  - [x] fsapi: ZIP folder download, copy (API /v1/zip, /v1/fs/copy; CLI zip, cp)
+  - [x] `doctor --selftest`: local HTTP plus loopback torrent, offline
   - [ ] Benchmark against aria2c on a throttled local server (aria2c in a throwaway container)
   - [ ] Later in M1: FTP (jlaffaye/ftp), global rate limit, re-resolve expired links
 - [ ] M2 torrent management (§5.9 "ours" items from engine-spike.md)

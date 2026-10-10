@@ -32,6 +32,7 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/netguard"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
+	"github.com/sadatdaniel/download_me_not/internal/selftest"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
 )
@@ -54,7 +55,7 @@ func main() {
 	pf.StringVar(&srvToken, "token", os.Getenv("DMN_TOKEN"), "API token (env DMN_TOKEN)")
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
-		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
+		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
 		jobAction("pause"), jobAction("resume"))
 	for name, ms := range map[string]string{
 		"copy": "M3", "formats": "M3",
@@ -286,7 +287,34 @@ func configCmd() *cobra.Command {
 }
 
 func doctorCmd() *cobra.Command {
-	return &cobra.Command{Use: "doctor", Short: "Report helper tools and the features they affect", RunE: func(*cobra.Command, []string) error {
+	var self bool
+	c := &cobra.Command{Use: "doctor", Short: "Report helper tools; --selftest proves downloads work (local fixtures only)", RunE: func(*cobra.Command, []string) error {
+		if self {
+			cs := selftest.Run(context.Background())
+			failed := 0
+			for _, c := range cs {
+				if !c.OK {
+					failed++
+				}
+			}
+			if err := show(cs, func() {
+				rows := [][]string{{"CHECK", "RESULT", "TIME", "DETAIL"}}
+				for _, c := range cs {
+					r := "ok"
+					if !c.OK {
+						r = "FAIL"
+					}
+					rows = append(rows, []string{c.Name, r, c.Took, c.Detail})
+				}
+				table(rows)
+			}); err != nil {
+				return err
+			}
+			if failed > 0 {
+				return fmt.Errorf("%d self-test check(s) failed", failed)
+			}
+			return nil
+		}
 		_, cfg, err := config.Load(cfgPath, nil)
 		if err != nil {
 			return err
@@ -304,6 +332,8 @@ func doctorCmd() *cobra.Command {
 			table(rows)
 		})
 	}}
+	c.Flags().BoolVar(&self, "selftest", false, "run an offline end-to-end download, stream and torrent test")
+	return c
 }
 
 func versionCmd() *cobra.Command {
@@ -411,6 +441,51 @@ func mvCmd() *cobra.Command {
 	return &cobra.Command{Use: "mv <from> <to>", Args: cobra.ExactArgs(2), RunE: func(_ *cobra.Command, a []string) error {
 		return call("POST", "/v1/fs/move", map[string]string{"from": a[0], "to": a[1]}, nil)
 	}}
+}
+
+func cpCmd() *cobra.Command {
+	return &cobra.Command{Use: "cp <from> <to>", Short: "Copy a file or folder on the server (never overwrites)", Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, a []string) error {
+			return call("POST", "/v1/fs/copy", map[string]string{"from": a[0], "to": a[1]}, nil)
+		}}
+}
+
+func zipCmd() *cobra.Command {
+	c := &cobra.Command{Use: "zip <folder>", Short: "Download a server folder as a ZIP", Args: cobra.ExactArgs(1)}
+	out := c.Flags().StringP("output", "o", "", "output file (default: <folder>.zip)")
+	c.RunE = func(_ *cobra.Command, a []string) error {
+		name := *out
+		if name == "" {
+			name = filepath.Base(strings.TrimRight(a[0], "/")) + ".zip"
+			if name == ".zip" || name == "/.zip" {
+				name = "downloads.zip"
+			}
+		}
+		req, err := http.NewRequest("GET", strings.TrimRight(srvURL, "/")+"/v1/zip/"+strings.TrimPrefix(a[0], "/"), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+srvToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			b, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(b))
+		}
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644) // never clobber a local file
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(f, resp.Body); err != nil {
+			f.Close()
+			return err
+		}
+		return show(map[string]string{"file": name}, func() { fmt.Println(name) })
+	}
+	return c
 }
 
 func rmCmd() *cobra.Command {

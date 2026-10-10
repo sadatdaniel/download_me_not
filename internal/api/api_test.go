@@ -91,6 +91,10 @@ func TestAuthAndScopes(t *testing.T) {
 		{"GET", "/v1/jobs/nope", "read-tok", "", 404},
 		{"GET", "/v1/jobs/nope/stream", "read-tok", "", 404},
 		{"GET", "/v1/raw/video.mp4", "", "", 401},
+		{"POST", "/v1/fs/copy", "write-tok", `{"from":"/video.mp4","to":"/copy.mp4"}`, 204},
+		{"GET", "/v1/zip/", "read-tok", "", 200},
+		{"GET", "/v1/zip/", "", "", 401},
+		{"GET", "/v1/zip/video.mp4", "read-tok", "", 404},
 		{"GET", "/v1/raw/video.mp4", "read-tok", "", 200},
 	}
 	for _, c := range cases {
