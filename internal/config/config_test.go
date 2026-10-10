@@ -27,9 +27,9 @@ func TestPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ got, want string }{
-		{c.Server.Listen, "file:1"},       // file beats default; unset flag doesn't override
-		{c.Paths.Data, "/env/data"},       // env beats file
-		{c.Paths.Downloads, "/flag/dl"},   // flag beats env
+		{c.Server.Listen, "file:1"},     // file beats default; unset flag doesn't override
+		{c.Paths.Data, "/env/data"},     // env beats file
+		{c.Paths.Downloads, "/flag/dl"}, // flag beats env
 	} {
 		if tc.got != tc.want {
 			t.Errorf("got %q want %q", tc.got, tc.want)

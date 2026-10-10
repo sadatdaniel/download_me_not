@@ -58,9 +58,9 @@ type Stats struct {
 }
 
 type Peer struct {
-	Addr, Client       string
-	Progress           float64
-	DownRate, UpRate   float64
+	Addr, Client        string
+	Progress            float64
+	DownRate, UpRate    float64
 	Outgoing, Encrypted bool
 }
 

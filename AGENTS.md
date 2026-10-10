@@ -3,6 +3,7 @@
 Self-hosted download server (web links, video sites via yt-dlp, torrents) with a folder/streaming API, a CLI, and later an Android app. One static Go binary. Single user.
 
 - **Spec:** [docs/scope.md](docs/scope.md) is the source of truth. Section 17 is the decision log, and section 19 holds the verified answers.
+- **Architecture:** [docs/architecture.md](docs/architecture.md) is the breakage map and self-healing rules. Read it before designing anything new.
 - **Progress:** [docs/STATUS.md](docs/STATUS.md) shows where we are and what comes next.
 - **Handoff:** [PROMPT.md](PROMPT.md) is the prompt to start a new agent session.
 
