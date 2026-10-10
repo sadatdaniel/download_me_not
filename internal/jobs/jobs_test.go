@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/download_me_not/internal/video"
 )
 
 func payload(n int, seed byte) []byte {
@@ -447,5 +449,57 @@ func TestKillSwitch(t *testing.T) {
 	down.Store(false)
 	if got := waitState(t, m, j.ID, "done", 20*time.Second); got.Error != "" {
 		t.Fatalf("error not cleared: %q", got.Error)
+	}
+}
+
+// A page URL (not a file) becomes a video job handled by yt-dlp. Offline: local page, ffmpeg clip.
+func TestVideoJob(t *testing.T) {
+	bin, err := exec.LookPath("yt-dlp")
+	if err != nil {
+		t.Skip("yt-dlp not installed (use the dev container)")
+	}
+	dir := t.TempDir()
+	clip := filepath.Join(t.TempDir(), "clip.mp4")
+	if out, err := exec.Command("ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=1:size=160x120:rate=10",
+		"-c:v", "libx264", clip).CombinedOutput(); err != nil {
+		t.Skipf("ffmpeg: %v %s", err, out)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/watch", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(`<html><head><title>Clip</title></head><body><video src="/clip.mp4"></video></body></html>`))
+	})
+	mux.HandleFunc("/clip.mp4", func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, clip) })
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	db, err := store.Open(filepath.Join(dir, "j.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	m := New(Options{DB: db, Downloads: dir, Client: http.DefaultClient, Tick: 20 * time.Millisecond,
+		Video: func() *video.Runner { return &video.Runner{Bin: bin} }})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- m.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+
+	pr, err := m.Probe(ctx, srv.URL+"/watch", nil)
+	if err != nil || pr.Kind != "video" || len(pr.Video.Formats) == 0 {
+		t.Fatalf("probe: %+v %v", pr, err)
+	}
+	j, _, _ := m.Add(AddRequest{Source: srv.URL + "/watch"}) // no format: detected as a page
+	j = waitState(t, m, j.ID, "done", time.Minute)
+	if j.Kind != "video" || j.Path == "" || j.Done == 0 {
+		t.Fatalf("video job %+v", j)
+	}
+	if rd, _, err := m.Open(ctx, j.ID, -1); err != nil {
+		t.Fatal(err)
+	} else {
+		rd.Close()
+	}
+	if _, _, err := m.Add(AddRequest{Source: srv.URL + "/watch", Format: "--exec=x"}); err == nil {
+		t.Fatal("bad format accepted")
 	}
 }

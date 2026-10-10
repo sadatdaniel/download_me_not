@@ -184,7 +184,7 @@ func SetJob(db *sql.DB, id string, f map[string]any) error {
 	return err
 }
 
-var mutable = map[string]bool{"mode": true, "want": true, "state": true, "name": true, "path": true,
+var mutable = map[string]bool{"kind": true, "mode": true, "want": true, "state": true, "name": true, "path": true,
 	"infohash": true, "done": true, "total": true, "error": true, "meta": true, "priority": true}
 
 func DeleteJob(db *sql.DB, id string) error {

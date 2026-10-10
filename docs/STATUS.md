@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** M3.1 video provider (see the checklist). M2 is done except M2.7, which is deferred.
+**Next action:** M3.2 cookies (see the checklist).
 **Blockers:** none.
 
 ## Checklist
@@ -54,7 +54,7 @@
   - [ ] M2.7 deferred: multi-container swarm with netem and IPv6 as a nightly CI job. Loopback, private-DHT and SOCKS tests already cover the logic
 - [x] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API
 - [ ] M3 integrations: yt-dlp, rclone and Drive (device flow, `drive.file`), CertMagic, install.sh, self-update, `pair`
-  - [ ] M3.1 video provider: yt-dlp as a managed tool (downloaded into data/bin, self-updated, previous copy kept), probe (`-J`) to formats and presets, download as a job with progress, all traffic through the netguard proxy, `formats` CLI. Tests: yt-dlp's generic extractor on a local page with our own ffmpeg-made video. **Never YouTube from the dev machine**
+  - [x] M3.1 video provider (managed install and self-update of yt-dlp moved to M3.5): probe (`-J`) to formats and presets, download as a job with progress, all traffic through the netguard proxy, `formats` CLI. Tests: yt-dlp's generic extractor on a local page with our own ffmpeg-made video. **Never YouTube from the dev machine**
   - [ ] M3.2 cookies: import a Netscape cookie file per domain, AES-GCM at rest (key file 0600 in the config dir), passed to yt-dlp and httpdl, never logged or returned
   - [ ] M3.3 Google Drive: rclone as a managed tool; OAuth device flow with the drive.file scope (needs the user's own Google Cloud client ID); copy-to-drive jobs; verify; optional delete-local
   - [ ] M3.4 HTTPS: self-signed with a fingerprint, CertMagic for domains (Pebble for local tests), `pair` QR (URL, token, fingerprint)

@@ -48,6 +48,21 @@ func (s *server) jobRoutes(api huma.API) {
 			}
 			return &jobOut{http.StatusCreated, j}, nil
 		})
+	huma.Register(api, op("probe", "POST", "/v1/probe", "write", "What is this URL? Web file, video page (with formats and presets) or torrent"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				URL    string            `json:"url" minLength:"1"`
+				Header map[string]string `json:"header,omitempty"`
+			}
+		}) (*struct{ Body jobs.ProbeResult }, error) {
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+			defer cancel()
+			res, err := s.Jobs.Probe(ctx, in.Body.URL, in.Body.Header)
+			if err != nil {
+				return nil, jobErr(err)
+			}
+			return body(res), nil
+		})
 	huma.Register(api, op("get-job", "GET", "/v1/jobs/{id}", "read", "One download"),
 		func(ctx context.Context, in *idIn) (*struct{ Body store.Job }, error) {
 			j, err := s.Jobs.Get(in.ID)

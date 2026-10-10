@@ -29,7 +29,7 @@ type Format struct {
 	Note       string  `json:"note,omitempty"`
 }
 
-type Info struct {
+type Media struct {
 	ID        string   `json:"id"`
 	Title     string   `json:"title"`
 	Thumbnail string   `json:"thumbnail,omitempty"`
@@ -61,6 +61,7 @@ type Runner struct {
 	Proxy   string // http://127.0.0.1:PORT of netguard's proxy; "" only in tests
 	Cookies string // Netscape cookie file for this request; "" = none
 	FFmpeg  string // directory or path of ffmpeg; "" = PATH
+	Deno    string // path of deno for YouTube's JS challenges; "" = yt-dlp's default lookup
 }
 
 func (r Runner) base() []string {
@@ -73,6 +74,9 @@ func (r Runner) base() []string {
 	}
 	if r.FFmpeg != "" {
 		a = append(a, "--ffmpeg-location", r.FFmpeg)
+	}
+	if r.Deno != "" {
+		a = append(a, "--js-runtimes", "deno:"+r.Deno)
 	}
 	return a
 }
@@ -96,15 +100,15 @@ func lastError(stderr []byte) error {
 }
 
 // Probe asks yt-dlp for title, thumbnail and formats without downloading.
-func (r Runner) Probe(ctx context.Context, url string) (Info, error) {
+func (r Runner) Probe(ctx context.Context, url string) (Media, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, r.Bin, append(r.base(), "-J", "--", url)...)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return Info{}, ctx.Err()
+			return Media{}, ctx.Err()
 		}
-		return Info{}, lastError(stderr.Bytes())
+		return Media{}, lastError(stderr.Bytes())
 	}
 	var raw struct {
 		ID, Title, Thumbnail string
@@ -124,9 +128,9 @@ func (r Runner) Probe(ctx context.Context, url string) (Info, error) {
 		}
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
-		return Info{}, fmt.Errorf("yt-dlp output: %w", err)
+		return Media{}, fmt.Errorf("yt-dlp output: %w", err)
 	}
-	info := Info{ID: raw.ID, Title: raw.Title, Thumbnail: raw.Thumbnail, Duration: raw.Duration, Extractor: raw.Extractor}
+	info := Media{ID: raw.ID, Title: raw.Title, Thumbnail: raw.Thumbnail, Duration: raw.Duration, Extractor: raw.Extractor}
 	for _, f := range raw.Formats {
 		size := f.Filesize
 		if size == 0 {

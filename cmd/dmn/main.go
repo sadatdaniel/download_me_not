@@ -39,6 +39,7 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/selftest"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
+	"github.com/sadatdaniel/download_me_not/internal/video"
 )
 
 var version = "dev" // set by -ldflags "-X main.version=..."
@@ -60,9 +61,9 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd())
 	for name, ms := range map[string]string{
-		"copy": "M3", "formats": "M3",
+		"copy":    "M3",
 		"cookies": "M3", "update": "M3", "pair": "M3", "uninstall": "M3",
 	} {
 		root.AddCommand(&cobra.Command{Use: name, Short: "(not implemented yet: " + ms + ")",
@@ -157,6 +158,7 @@ func serveCmd() *cobra.Command {
 				Ratio: settingFloat(cfg, "torrent", "seedRatio", 1), Minutes: setting(cfg, "torrent", "seedMinutes", 60)},
 			NewEngine:   func() (engine.Engine, error) { return newEngine(cfg, lim, bl) },
 			TorrentGate: killSwitch(settingStr(cfg, "torrent", "bind", "")),
+			Video:       videoRunner(ctx, cfg.Paths.Data),
 		})
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
@@ -646,10 +648,11 @@ func addCmd() *cobra.Command {
 	headers := c.Flags().StringArrayP("header", "H", nil, `request header, e.g. -H "Cookie: a=b" (repeatable)`)
 	seed := c.Flags().String("seed", "", "torrents: stop, ratio:1.5, time:60 (minutes) or forever")
 	prio := c.Flags().Int("priority", 0, "queue priority: higher starts first")
+	format := c.Flags().StringP("format", "f", "", "video pages: preset (best, 1080p, 720p, 480p, m4a, opus, mp3) or a format id from `dmn formats`")
 	unpack := c.Flags().Bool("extract", false, "unpack archives when done (default from jobs.extract)")
 	delArc := c.Flags().Bool("delete-archive", false, "with --extract: delete the archive after unpacking")
 	c.RunE = func(_ *cobra.Command, a []string) error {
-		req := jobs.AddRequest{Source: a[0], Mode: *mode, Header: map[string]string{}, Priority: *prio}
+		req := jobs.AddRequest{Source: a[0], Mode: *mode, Header: map[string]string{}, Priority: *prio, Format: *format}
 		if c.Flags().Changed("extract") || *delArc {
 			req.Post = &jobs.Post{Extract: *unpack || *delArc, DeleteArchive: *delArc}
 		}
@@ -1005,4 +1008,65 @@ func learnedCmd() *cobra.Command {
 		})
 	}
 	return c
+}
+
+// videoRunner starts the SSRF-guarded proxy that yt-dlp must use (it makes its own connections)
+// and returns a lookup that finds yt-dlp, ffmpeg and deno at the time of each job.
+func videoRunner(ctx context.Context, dataDir string) func() *video.Runner {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "video: no proxy, video downloads disabled:", err)
+		return nil
+	}
+	px := &http.Server{Handler: netguard.NewProxy(), ReadHeaderTimeout: 10 * time.Second}
+	go px.Serve(ln)
+	go func() { <-ctx.Done(); px.Close() }()
+	proxyURL := "http://" + ln.Addr().String()
+	return func() *video.Runner {
+		bin, ok := tools.Find("yt-dlp", dataDir)
+		if !ok {
+			return nil
+		}
+		r := &video.Runner{Bin: bin, Proxy: proxyURL}
+		if p, ok := tools.Find("ffmpeg", dataDir); ok {
+			r.FFmpeg = p
+		}
+		if p, ok := tools.Find("deno", dataDir); ok {
+			r.Deno = p
+		}
+		return r
+	}
+}
+
+func formatsCmd() *cobra.Command {
+	return &cobra.Command{Use: "formats <url>", Short: "Show formats and presets for a video page", Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, a []string) error {
+			var res jobs.ProbeResult
+			if err := call("POST", "/v1/probe", map[string]string{"url": a[0]}, &res); err != nil {
+				return err
+			}
+			return show(res, func() {
+				if res.Video == nil {
+					fmt.Printf("%s: %s %s\n", res.Kind, res.Name, sizeStr(res.Size))
+					return
+				}
+				fmt.Printf("%s (%s)\n\npresets: ", res.Video.Title, res.Video.Extractor)
+				for _, p := range res.Presets {
+					fmt.Print(p.Name, " ")
+				}
+				fmt.Println("\n\nuse one with: dmn add --format <preset or id> <url>")
+				rows := [][]string{{"ID", "EXT", "RESOLUTION", "FPS", "VIDEO", "AUDIO", "SIZE"}}
+				for _, f := range res.Video.Formats {
+					rows = append(rows, []string{f.ID, f.Ext, f.Resolution, fmt.Sprint(f.FPS), f.VCodec, f.ACodec, sizeStr(f.Size)})
+				}
+				table(rows)
+			})
+		}}
+}
+
+func sizeStr(n int64) string {
+	if n <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/httpdl"
 	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/download_me_not/internal/video"
 )
 
 type Options struct {
@@ -49,6 +50,9 @@ type Options struct {
 	// TorrentGate returns a reason when torrents must not run (kill switch: the bound VPN interface is
 	// down). Running torrents stop and wait, and resume when it returns "". nil = always open.
 	TorrentGate func() string
+	// Video returns how to run yt-dlp, or nil when it isn't installed. Called per job, so a tool
+	// installed while the server runs is picked up.
+	Video func() *video.Runner
 }
 
 var (
@@ -76,6 +80,9 @@ type runner struct {
 	tor     engine.Torrent
 	seeding bool   // finished downloading; does not take a download slot
 	reason  string // why the manager stopped it (e.g. disk full), shown as the job error
+	vdone   int64  // video jobs: progress reported by yt-dlp
+	vtotal  int64
+	video   bool
 }
 
 type sample struct {
@@ -93,6 +100,11 @@ type webMeta struct {
 	Post   *Post             `json:"post,omitempty"`
 	Header map[string]string `json:"header,omitempty"`
 	HTTP   *httpdl.State     `json:"http,omitempty"`
+}
+
+type videoMeta struct {
+	Format string            `json:"format,omitempty"` // preset or yt-dlp format id
+	Header map[string]string `json:"header,omitempty"`
 }
 
 type torMeta struct {
@@ -151,6 +163,9 @@ type AddRequest struct {
 	Seed     *SeedPolicy       `json:"seed,omitempty"`     // torrents: override the default seeding policy
 	Priority int               `json:"priority,omitempty"` // higher starts first
 	Post     *Post             `json:"post,omitempty"`     // after completion; default from settings
+	// Format makes it a video job (yt-dlp): a preset (best, 1080p, 720p, 480p, m4a, opus, mp3) or a
+	// format id from /v1/probe. Without it, a URL that turns out to be a web page becomes a video job.
+	Format string `json:"format,omitempty"`
 }
 
 // Add creates a job. Adding a torrent that already has a job returns that job and true.
@@ -189,6 +204,13 @@ func (m *Manager) Add(r AddRequest) (store.Job, bool, error) {
 		}
 		j.Kind, j.Source = "web", r.Source
 		meta = webMeta{Header: r.Header, Post: r.Post}
+		if r.Format != "" {
+			if _, err := video.Selector(r.Format); err != nil {
+				return store.Job{}, false, err
+			}
+			j.Kind = "video"
+			meta = videoMeta{Format: r.Format, Header: r.Header}
+		}
 	}
 	if m.o.Allowed != nil && !m.o.Allowed(j.Kind) {
 		return store.Job{}, false, fmt.Errorf("the %s provider is switched off", j.Kind)
@@ -435,9 +457,12 @@ func (m *Manager) start(parent context.Context, j store.Job) {
 			m.finish(ctx, j.ID, err)
 			close(r.done)
 		}()
-		if j.Kind == "torrent" {
+		switch j.Kind {
+		case "torrent":
 			err = m.runTorrent(ctx, r, j)
-		} else {
+		case "video":
+			err = m.runVideo(ctx, r, j)
+		default:
 			err = m.runWeb(ctx, r, j)
 		}
 	}()
@@ -495,6 +520,15 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 		st, err := httpdl.Probe(ctx, m.o.Client, j.Source, hdr)
 		if err != nil {
 			return err
+		}
+		// A web page, not a file: hand it to yt-dlp (the way IDM's video grabber works).
+		if strings.HasPrefix(st.Type, "text/html") && m.o.Video != nil && (m.o.Allowed == nil || m.o.Allowed("video")) {
+			b, _ := json.Marshal(videoMeta{Format: "best", Header: meta.Header})
+			if err := store.SetJob(m.o.DB, j.ID, map[string]any{"kind": "video", "meta": json.RawMessage(b)}); err != nil {
+				return err
+			}
+			j.Kind, j.Meta = "video", b
+			return m.runVideo(ctx, r, j)
 		}
 		meta.HTTP = &st
 		if path, err = m.unique(st.Name); err != nil {
@@ -743,6 +777,8 @@ func (m *Manager) Progress() []Progress {
 		p := Progress{ID: id, Total: -1}
 		r.mu.Lock()
 		switch {
+		case r.video:
+			p.Done, p.Total = r.vdone, r.vtotal
 		case r.dl != nil:
 			p.Done, p.Total = r.dl.Completed(), r.dl.State().Size
 		case r.tor != nil:
@@ -777,14 +813,21 @@ func (m *Manager) Open(ctx context.Context, id string, index int) (io.ReadSeekCl
 	r := m.run[id]
 	m.mu.Unlock()
 	if r == nil {
-		if j.State == "done" && j.Kind == "web" {
+		if j.State == "done" && j.Path != "" {
 			root, err := os.OpenRoot(m.o.Downloads)
 			if err != nil {
 				return nil, "", err
 			}
 			defer root.Close()
 			f, err := root.Open(j.Path)
-			return f, j.Path, err
+			if err != nil {
+				return nil, "", err
+			}
+			if fi, err := f.Stat(); err != nil || fi.IsDir() {
+				f.Close()
+				return nil, "", errors.New("this download is a folder: browse it with /v1/fs")
+			}
+			return f, j.Path, nil
 		}
 		return nil, "", ErrNotRunning
 	}
