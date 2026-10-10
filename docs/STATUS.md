@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** Step 0 (repo bootstrap) done. No Go code yet.
-**Next action:** Step 1, torrent engine spike. Add `compose.dev.yaml` (Go 1.26 service plus a `swarm` profile with a tracker and seeder). Create `spike/engine/` with a minimal Engine interface over anacrolix/torrent, then check every §5.9 item and stream seeking with `CGO_ENABLED=0`. Write the results to `docs/engine-spike.md`.
+**Next action:** Step 1, torrent engine spike. Add `compose.dev.yaml` (Go 1.26 service plus an isolated `swarm` profile: tracker and seeder on an `internal: true` network, self-generated content only, see AGENTS.md rule 7). Create `spike/engine/` with a minimal Engine interface over anacrolix/torrent, then check every §5.9 item and stream seeking with `CGO_ENABLED=0`. Write the results to `docs/engine-spike.md`.
 **Blockers:** none.
 
 ## Checklist
@@ -11,7 +11,7 @@
 - [x] Verified answers recorded in scope §19
 
 ### Step 1: Torrent engine spike (time-box 2–3 sessions)
-- [ ] `compose.dev.yaml`: Go dev container plus a local test swarm (tracker plus seeder)
+- [ ] `compose.dev.yaml`: Go dev container plus an isolated local swarm (no internet, self-made content and torrents, incl. v2/hybrid)
 - [ ] Engine interface draft plus an anacrolix implementation in `spike/engine/`
 - [ ] Every §5.9 item marked pass / our-layer / gap, with evidence
 - [ ] Stream mode: Range seek moves the read priority; first and last pieces come first

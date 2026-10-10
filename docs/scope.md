@@ -539,6 +539,7 @@ Open-core: open-source the server and CLI, keep the paid Android app closed.
 | Browser extension (send downloads with cookies and headers, media sniffer) as milestone M5 | Proposed (2026-10-10) |
 | Stack: cobra (CLI), koanf (config), huma v2 (API + OpenAPI), modernc.org/sqlite, mholt/archives, creativeprojects/go-selfupdate, code.dny.dev/ssrf, `os.Root` for path safety | Proposed (2026-10-10) |
 | Provider settings forms use plain JSON Schema | Proposed (2026-10-10) |
+| Testing stays legal and local: no public torrent swarms, trackers or DHT from the dev machine; isolated Docker swarm with self-generated content only (AGENTS.md rule 7) | Decided (2026-10-10) |
 | Android: Kotlin + Compose with a DocumentsProvider; notifications through UnifiedPush/ntfy | Proposed, decide at M4 |
 
 ## 18. Build order (handoff to Claude Code)

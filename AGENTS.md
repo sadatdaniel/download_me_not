@@ -14,9 +14,10 @@ Self-hosted download server (web links, video sites via yt-dlp, torrents) with a
 4. Every external tool (yt-dlp, deno, rclone, ffmpeg) is optional. Detect it at startup and switch the feature off cleanly when it's missing.
 5. Security: SSRF guard on every user-supplied URL (including those that yt-dlp and torrent web seeds or trackers fetch), `os.Root` for every file operation, and tokens default to the read scope.
 6. **Never commit** secrets, tokens, cookies, `.env` files, real torrents or downloaded media, or any personal data (phone numbers, emails other than git authorship, IPs of real machines). The repo will become public later with its full history. gitleaks runs in CI.
-7. A change to a decision goes in scope §17. A "verify" item that has been answered goes in scope §19.
-8. A shortcut with a known limit gets a `// ponytail: <limit, when to upgrade>` comment.
-9. The CLI name `dmn` is a **placeholder**. Keep it in one place (`cmd/dmn`, `.goreleaser.yaml`) so the rename is a single commit.
+7. **Legal testing only. Torrent uploads of protected content are pursued in many countries.** Never join a public torrent swarm, never use public trackers, DHT, PEX, LSD or UPnP, and never fetch third-party torrents or media from this machine. Torrent tests run only in the isolated Docker swarm (`internal: true` network, no internet), using content we generate ourselves (random bytes, an ffmpeg `testsrc` video) and `.torrent` files we create locally, including v2 and hybrid ones. The same goes for HTTP and yt-dlp tests: local test servers serving our own files. If a test seems to need the public internet, stop and ask the user.
+8. A change to a decision goes in scope §17. A "verify" item that has been answered goes in scope §19.
+9. A shortcut with a known limit gets a `// ponytail: <limit, when to upgrade>` comment.
+10. The CLI name `dmn` is a **placeholder**. Keep it in one place (`cmd/dmn`, `.goreleaser.yaml`) so the rename is a single commit.
 
 ## Dev environment (Docker only, nothing installed on the host)
 
