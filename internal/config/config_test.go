@@ -22,7 +22,7 @@ func TestPrecedence(t *testing.T) {
 	fs.String("downloads", "", "")
 	fs.Parse([]string{"--downloads", "/flag/dl"})
 
-	k, c, err := Load(path, fs)
+	_, c, err := Load(path, fs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestPrecedence(t *testing.T) {
 		}
 	}
 	Set(path, "auth.signkey", "s3cret")
-	k, _, _ = Load(path, nil)
+	k, _, _ := Load(path, nil)
 	if Effective(k)["auth.signkey"] != "<redacted>" {
 		t.Error("secret not redacted")
 	}

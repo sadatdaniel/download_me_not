@@ -541,6 +541,7 @@ Open-core: open-source the server and CLI, keep the paid Android app closed.
 | Provider settings forms use plain JSON Schema | Proposed (2026-10-10) |
 | `serve` does not start the torrent engine until the job layer needs it (M1), so a bare server never joins the public DHT | Decided (2026-10-10) |
 | API contract: generated OpenAPI committed at api/openapi.json; a snapshot test fails on any change; /v1 is additive-only | Decided (2026-10-10) |
+| Swarm memory: learned trackers (ranked) and a DHT node cache in SQLite, auto-added to new public torrents only, never private ones; no peer IPs kept | Proposed for M2 (2026-10-10) |
 | Stack in use: cobra, koanf, huma v2, modernc.org/sqlite, code.dny.dev/ssrf, os.Root, anacrolix/torrent | Decided (2026-10-10), replaces the "Proposed" stack row |
 | Testing stays legal and local: no public torrent swarms, trackers or DHT from the dev machine; isolated Docker swarm with self-generated content only (AGENTS.md rule 7) | Decided (2026-10-10) |
 | Android: Kotlin + Compose with a DocumentsProvider; notifications through UnifiedPush/ntfy | Proposed, decide at M4 |

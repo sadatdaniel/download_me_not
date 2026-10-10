@@ -7,6 +7,7 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -108,11 +109,20 @@ func newSwarm(t *testing.T, size int, seederMod func(*torrent.ClientConfig)) swa
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.VerifyData(); err != nil {
+	if err := st.VerifyDataContext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	waitComplete(t, st, 10*time.Second)
 	return swarm{s, mi, info, data, name, dir}
+}
+
+func magnet(t *testing.T, mi *metainfo.MetaInfo) string {
+	t.Helper()
+	m, err := mi.MagnetV2()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m.String()
 }
 
 func waitComplete(t *testing.T, tt *torrent.Torrent, d time.Duration) {
@@ -155,7 +165,7 @@ func TestBasicDownload(t *testing.T) {
 func TestMagnetMetadata(t *testing.T) {
 	sw := newSwarm(t, 1<<20, nil)
 	l := newClient(t, t.TempDir(), nil)
-	lt, err := l.AddMagnet(sw.mi.Magnet(nil, &sw.info).String())
+	lt, err := l.AddMagnet(magnet(t, sw.mi))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +185,7 @@ func TestDuplicate(t *testing.T) {
 	sw := newSwarm(t, 1<<20, nil)
 	l := newClient(t, t.TempDir(), nil)
 	a, _ := l.AddTorrent(sw.mi)
-	b, _ := l.AddMagnet(sw.mi.Magnet(nil, &sw.info).String())
+	b, _ := l.AddMagnet(magnet(t, sw.mi))
 	if a != b {
 		t.Fatal("duplicate add created a second torrent")
 	}
@@ -324,7 +334,7 @@ func TestFileSelection(t *testing.T) {
 	mi, _ := buildMI(t, root)
 	s := newClient(t, dir, nil)
 	st, _ := s.AddTorrent(mi)
-	st.VerifyData()
+	st.VerifyDataContext(context.Background())
 	waitComplete(t, st, 10*time.Second)
 
 	ldir := t.TempDir()
@@ -388,7 +398,7 @@ func TestRecheck(t *testing.T) {
 	}
 	f.WriteAt(make([]byte, 1000), 300<<10) // corrupt one piece
 	f.Close()
-	if err := lt.VerifyData(); err != nil {
+	if err := lt.VerifyDataContext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	got := lt.BytesCompleted()
@@ -422,7 +432,7 @@ func TestResumeAfterRestart(t *testing.T) {
 		names = append(names, e.Name())
 	}
 	t.Logf("EVIDENCE %s: files after restart %v, BytesCompleted before verify %d", t.Name(), names, lt2.BytesCompleted())
-	lt2.VerifyData()
+	lt2.VerifyDataContext(context.Background())
 	after := lt2.BytesCompleted()
 	if after == 0 {
 		t.Fatal("progress lost on restart")
@@ -546,7 +556,7 @@ func TestV2AndHybrid(t *testing.T) {
 				evidence(t, "GAP: cannot add libtorrent-made %s torrent: %v", name, err)
 				return
 			}
-			st.VerifyData()
+			st.VerifyDataContext(context.Background())
 			waitComplete(t, st, 10*time.Second)
 			ldir := t.TempDir()
 			l := newClient(t, ldir, nil)

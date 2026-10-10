@@ -36,6 +36,7 @@
 ### Milestones (each gets its own plan)
 - [ ] M1 core: IDM-grade HTTP downloader (dynamic segmentation, resume, retry, header passthrough, aria2c benchmark), queue, stream mode, folder API
 - [ ] M2 torrent management (§5.9 "ours" items from engine-spike.md)
+- [ ] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API
 - [ ] M3 integrations: yt-dlp, rclone and Drive (device flow, `drive.file`), CertMagic, install.sh, self-update, `pair`
 - [ ] M4 Android app (Kotlin + Compose + DocumentsProvider proposed)
 - [ ] M5 browser extension (proposed): send downloads with cookies and headers, media sniffer
