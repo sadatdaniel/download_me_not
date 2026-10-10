@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** Write the M2 plan (torrent management, §5.9 "ours" items in engine-spike.md, plus swarm memory) into the checklist below, then build it. Open M1 leftovers: FTP (deferred, see scope §17) and a global speed limit (moves to M2 `limits`).
+**Next action:** M2.1 (see the checklist). Engine facts for M2: no runtime blocklist setter (use our own Ranger), no SOCKS5 in the library (AddDialer + DialForPeerConns=false), limiters can change at runtime.
 **Blockers:** none.
 
 ## Checklist
@@ -45,6 +45,13 @@
   - [ ] FTP: deferred (rare; passive-mode data connections are an extra SSRF surface). Build when needed with jlaffaye/ftp and a guarded dial function for both connections
   - [ ] Global speed limit: moves to M2 together with `limits`
 - [ ] M2 torrent management (§5.9 "ours" items from engine-spike.md)
+  - [ ] M2.1 settings: engine options from the torrent provider schema (encryption, uTP, IPv6, max peers, anonymous mode, bind address); runtime global limits (rate.Limiter.SetLimit) with API and CLI `limits`; swappable blocklist (our iplist.Ranger with an atomic swap, so refresh needs no restart); fields that need a restart are flagged in the schema
+  - [ ] M2.2 views: peers (address, client, progress, rates, encrypted), piece map, availability, trackers (list, add, remove), a plain-language "why slow/stalled" hint; API plus CLI peers, pieces, trackers, recheck
+  - [ ] M2.3 seeding policy (stop, ratio, time, forever), disk-space guard (check before start, poll, pause with reason), queue priority and reordering
+  - [ ] M2.4 post-completion: archive extraction (mholt/archives on os.Root, size and ratio limits, skip encrypted), optional delete of the archive
+  - [ ] M2.5 swarm memory (below)
+  - [ ] M2.6 kill switch (pause when the bound interface goes down), SOCKS5 dialer (ours: AddDialer plus x/net/proxy), UPnP opt-in, stream mode first/last pieces, blocklist from URL on a schedule
+  - [ ] M2.7 isolated multi-container swarm with netem; private DHT; IPv6
 - [ ] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API
 - [ ] M3 integrations: yt-dlp, rclone and Drive (device flow, `drive.file`), CertMagic, install.sh, self-update, `pair`
 - [ ] M4 Android app (Kotlin + Compose + DocumentsProvider proposed)
