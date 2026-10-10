@@ -20,7 +20,7 @@ Run: `docker compose -f compose.dev.yaml run --rm test go test -v ./spike/engine
 | Duplicate detection | pass | `.torrent` and a magnet for the same infohash return the same `*Torrent` |
 | File selection / per-file priority | pass | A skipped file (`PiecePriorityNone`) got 0 bytes. Pieces that span two files still download, as expected |
 | Pause / resume | pass | `DisallowDataDownload` / `AllowDataDownload` |
-| Force recheck | pass | `VerifyData()` found the corrupted piece and it was downloaded again (the peer must be re-added, because two complete seeds drop each other) |
+| Force recheck | pass | `VerifyData()` found the corrupted piece and it was downloaded again (the peer must be re-added, because two complete seeds drop each other). Note: anacrolix makes completed files read-only (0444); only visible as non-root |
 | Incomplete files and resume | pass + ours | Incomplete files are kept as `name.part` (this is the spec's temp area). Piece state lives in `.torrent.bolt.db` (pure Go). **After a restart, progress shows 0 until `VerifyData()`**, so run a recheck on startup. It recovered 2.4 of 3.4 MiB; the remaining pieces were still in flight. The move-to-final-folder step is ours |
 | Global bandwidth limits | pass | `DownloadRateLimiter` 1 MiB/s → 3 MiB took 2.8 s. Upload uses `UploadRateLimiter` (used in other tests) |
 | Per-torrent limits | ours | No API. Build it as a per-torrent `rate.Limiter` on our read path, or as weighted priorities. Cheap |

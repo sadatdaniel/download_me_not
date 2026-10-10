@@ -392,6 +392,7 @@ func TestRecheck(t *testing.T) {
 	lt.AddClientPeer(sw.seeder)
 	lt.DownloadAll()
 	waitComplete(t, lt, 10*time.Second)
+	os.Chmod(filepath.Join(dir, sw.name), 0o644) // anacrolix marks completed files read-only
 	f, err := os.OpenFile(filepath.Join(dir, sw.name), os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
