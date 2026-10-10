@@ -69,6 +69,6 @@ spike/bench/       httpdl vs aria2c benchmark (docs/benchmark.md)
 
 ## Definition of done (every session)
 
-- Build and tests pass in the dev container.
+- `gofmt -l .` prints nothing, `go vet ./...` is clean, and tests pass in the dev container (CI checks all three).
 - `docs/STATUS.md` is updated: what's done, the next action, any blockers, and a line in the session log.
 - Commit with a clear message and push to `origin main` (or to a branch with a PR for larger changes).

@@ -71,7 +71,7 @@ func main() {
 	url := srv.URL + "/file.bin"
 
 	fmt.Printf("file %d MiB, %.1f MiB/s per connection, %.0f%% slow routes, %d connections\n", *size, *rate, *slow*100, *conns)
-	fmt.Printf("ideal (all connections at full speed): %.1fs\n\n", float64(*size) / (*rate * float64(*conns)))
+	fmt.Printf("ideal (all connections at full speed): %.1fs\n\n", float64(*size)/(*rate*float64(*conns)))
 
 	run := func(name string, f func(out string) error) {
 		out := filepath.Join(dir, name)
