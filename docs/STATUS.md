@@ -40,7 +40,7 @@
   - [x] API + CLI: add (URL, magnet, .torrent), get, pause, resume, mode, cancel; /v1/jobs/{id}/stream for files still downloading (blocks until bytes arrive)
   - [x] fsapi: ZIP folder download, copy (API /v1/zip, /v1/fs/copy; CLI zip, cp)
   - [x] `doctor --selftest`: local HTTP plus loopback torrent, offline
-  - [ ] Benchmark against aria2c on a throttled local server (aria2c in a throwaway container)
+  - [x] Benchmark against aria2c (docs/benchmark.md): tie on a clean network, ~30% faster with slow routes
   - [ ] Later in M1: FTP (jlaffaye/ftp), global rate limit, re-resolve expired links
 - [ ] M2 torrent management (§5.9 "ours" items from engine-spike.md)
 - [ ] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API

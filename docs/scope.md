@@ -535,7 +535,7 @@ Open-core: open-source the server and CLI, keep the paid Android app closed.
 | Project name `download_me_not` for now; CLI name `dmn` is a placeholder | Decided to postpone the final name (2026-10-10) |
 | Repo private now; public with a licence later | Decided (2026-10-10) |
 | Development runs in Docker (Go dev container); nothing installed on the host | Decided (2026-10-10) |
-| Goal: IDM-grade HTTP downloader (dynamic segmentation, resume, retry, header passthrough), proven by a benchmark against aria2c | Decided as a goal (2026-10-10) |
+| Goal: IDM-grade HTTP downloader (dynamic segmentation, resume, retry, header passthrough), proven by a benchmark against aria2c | Met for M1 (2026-10-11): tie on a clean network, ~30% faster than aria2c with slow routes (docs/benchmark.md). Techniques: speed-aware stealing, latest-ETA victim, relative slow-connection restart |
 | Browser extension (send downloads with cookies and headers, media sniffer) as milestone M5 | Proposed (2026-10-10) |
 | Stack: cobra (CLI), koanf (config), huma v2 (API + OpenAPI), modernc.org/sqlite, mholt/archives, creativeprojects/go-selfupdate, code.dny.dev/ssrf, `os.Root` for path safety | Proposed (2026-10-10) |
 | Provider settings forms use plain JSON Schema | Proposed (2026-10-10) |

@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +50,8 @@ type Options struct {
 	OnSave      func(State)  // called every SaveEvery and when Run returns
 	SaveEvery   time.Duration
 }
+
+var errRestart = errors.New("slow connection restarted")
 
 var (
 	ErrChanged = errors.New("the file on the server changed; restart the download")
@@ -133,7 +136,10 @@ func SanitizeName(s string) string {
 
 type seg struct {
 	Segment
-	active bool
+	active  bool
+	rate    float64 // bytes/s of the current request, 0 = unknown yet
+	reqAt   time.Time
+	restart bool // set by the watchdog: this request is far slower than the others
 }
 
 type Download struct {
@@ -263,6 +269,9 @@ func (d *Download) Run(ctx context.Context) error {
 	if !d.st.Ranges {
 		conns = 1
 	}
+	if d.st.Ranges && conns > 1 {
+		go d.watchdog(ctx)
+	}
 	var (
 		wg       sync.WaitGroup
 		errOnce  sync.Once
@@ -272,11 +281,15 @@ func (d *Download) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for s := d.next(); s != nil; s = d.next() {
+			var rate float64
+			for s := d.next(rate); s != nil; s = d.next(rate) {
 				if err := d.fetch(ctx, f, s); err != nil {
 					errOnce.Do(func() { firstErr = err; cancel() })
 					return
 				}
+				d.mu.Lock()
+				rate = s.rate
+				d.mu.Unlock()
 			}
 		}()
 	}
@@ -290,8 +303,10 @@ func (d *Download) Run(ctx context.Context) error {
 	return f.Sync()
 }
 
-// next claims an idle unfinished segment, or splits the largest active one (work stealing).
-func (d *Download) next() *seg {
+// next claims an idle unfinished segment, or steals from the active segment that will finish last.
+// The split is speed-aware: the thief (at myRate) takes a share so both finish at the same time,
+// which takes almost everything from a connection stuck on a slow route.
+func (d *Download) next(myRate float64) *seg {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, s := range d.segs {
@@ -305,15 +320,27 @@ func (d *Download) next() *seg {
 	}
 	var big *seg
 	var bigRem int64
+	var bigETA float64
+	floor := min(d.o.MinSplit, 256<<10) // smallest piece worth a new request
 	for _, s := range d.segs {
-		if rem := s.End - s.Start - s.Done; s.active && rem > bigRem {
-			big, bigRem = s, rem
+		rem := s.End - s.Start - s.Done
+		if !s.active || rem <= floor+64<<10 {
+			continue
+		}
+		eta := float64(rem) / max(s.rate, 1) // unknown rate: looks slow, so it gets help first
+		if eta > bigETA {
+			big, bigRem, bigETA = s, rem, eta
 		}
 	}
-	if big == nil || bigRem < 2*d.o.MinSplit {
+	if big == nil {
 		return nil
 	}
-	mid := big.Start + big.Done + bigRem/2
+	take := bigRem / 2
+	if myRate > 0 && big.rate > 0 {
+		take = int64(float64(bigRem) * myRate / (myRate + big.rate))
+	}
+	take = min(max(take, floor), bigRem-64<<10) // the owner keeps at least its in-flight read
+	mid := big.Start + big.Done + bigRem - take
 	n := &seg{Segment: Segment{mid, big.End, 0}, active: true}
 	big.End = mid
 	d.segs = append(d.segs, n)
@@ -336,6 +363,9 @@ func (d *Download) fetch(ctx context.Context, f *os.File, s *seg) error {
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		if errors.Is(err, errRestart) {
+			continue // immediately, on a fresh request; not a failure
 		}
 		var he HTTPError
 		if errors.As(err, &he) || errors.Is(err, ErrChanged) || errors.Is(err, ErrNoRange) {
@@ -394,6 +424,10 @@ func (d *Download) stream(ctx context.Context, f *os.File, s *seg, pos, end int6
 		return false, HTTPError{resp.StatusCode}
 	}
 
+	reqStart, got := time.Now(), int64(0)
+	d.mu.Lock()
+	s.reqAt, s.rate, s.restart = reqStart, 0, false
+	d.mu.Unlock()
 	buf := make([]byte, 64<<10)
 	for {
 		n, rerr := resp.Body.Read(buf)
@@ -410,15 +444,23 @@ func (d *Download) stream(ctx context.Context, f *os.File, s *seg, pos, end int6
 				pos += int64(n)
 				progressed = true
 				d.mu.Lock()
+				got += int64(n)
+				if el := time.Since(reqStart).Seconds(); el > 0.2 {
+					s.rate = float64(got) / el
+				}
 				// Clamp: a split may have moved End below what this write covered (same bytes, harmless).
 				s.Done = pos - s.Start
 				if s.End >= 0 && s.Done > s.End-s.Start {
 					s.Done = s.End - s.Start
 				}
 				done := s.End >= 0 && s.Done >= s.End-s.Start
+				restart := s.restart
 				d.mu.Unlock()
 				if done {
 					return progressed, nil
+				}
+				if restart {
+					return progressed, errRestart
 				}
 			}
 		}
@@ -438,5 +480,37 @@ func (d *Download) stream(ctx context.Context, f *os.File, s *seg, pos, end int6
 		if rerr != nil {
 			return progressed, rerr
 		}
+	}
+}
+
+// watchdog restarts requests that run far below the median speed (aria2's --lowest-speed-limit
+// idea, but relative): a fresh request often gets a better route or server.
+func (d *Download) watchdog(ctx context.Context) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		d.mu.Lock()
+		var rates []float64
+		for _, s := range d.segs {
+			if s.active && s.rate > 0 {
+				rates = append(rates, s.rate)
+			}
+		}
+		if len(rates) >= 3 {
+			slices.Sort(rates)
+			median := rates[len(rates)/2]
+			for _, s := range d.segs {
+				rem := s.End - s.Start - s.Done
+				if s.active && s.rate > 0 && s.rate < median/5 && time.Since(s.reqAt) > 2*time.Second && rem > 512<<10 {
+					s.restart = true
+				}
+			}
+		}
+		d.mu.Unlock()
 	}
 }
