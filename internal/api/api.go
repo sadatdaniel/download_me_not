@@ -20,6 +20,7 @@ import (
 
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
+	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
@@ -32,6 +33,7 @@ type Deps struct {
 	DB        *sql.DB
 	FS        *fsapi.FS
 	Providers *provider.Registry
+	Jobs      *jobs.Manager
 }
 
 var rank = map[string]int{"read": 1, "write": 2, "admin": 3}
@@ -89,6 +91,7 @@ func New(d Deps) (http.Handler, huma.API) {
 	})
 	s.routes(api)
 	mux.HandleFunc("GET /v1/raw/{path...}", s.raw)
+	mux.HandleFunc("GET /v1/jobs/{id}/stream", s.stream)
 	return mux, api
 }
 
@@ -128,23 +131,15 @@ func (s *server) routes(api huma.API) {
 			jobs, err := store.ListJobs(s.DB)
 			return body(jobs), err
 		})
-	huma.Register(api, op("add-job", "POST", "/v1/jobs", "write", "Add a download (URL, video page, magnet or .torrent)"),
-		func(ctx context.Context, in *struct {
-			Body struct {
-				Source string `json:"source" minLength:"1"`
-				Mode   string `json:"mode,omitempty" enum:"standard,stream" default:"standard"`
-			}
-		}) (*struct{ Body store.Job }, error) {
-			return nil, huma.NewError(http.StatusNotImplemented, "adding downloads arrives in milestone M1")
-		})
+	s.jobRoutes(api)
 
-	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress (server-sent events)"),
-		map[string]any{"ping": ping{}},
+	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
+		map[string]any{"progress": []jobs.Progress{}},
 		func(ctx context.Context, _ *struct{}, send sse.Sender) {
-			t := time.NewTicker(15 * time.Second) // keeps proxies and phones from dropping idle streams
+			t := time.NewTicker(time.Second) // also keeps proxies and phones from dropping idle streams
 			defer t.Stop()
 			for {
-				if send.Data(ping{Time: time.Now().Unix()}) != nil {
+				if send.Data(s.Jobs.Progress()) != nil {
 					return
 				}
 				select {
@@ -250,10 +245,6 @@ func (s *server) routes(api huma.API) {
 		func(ctx context.Context, _ *struct{}) (*struct{ Body []tools.Tool }, error) {
 			return body(tools.Doctor(s.Cfg.Paths.Data)), nil
 		})
-}
-
-type ping struct {
-	Time int64 `json:"time"`
 }
 
 // raw streams a file with Range support. Auth: a signed URL (for players) or a read token.

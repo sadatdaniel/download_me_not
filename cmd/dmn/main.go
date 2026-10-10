@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -26,7 +27,10 @@ import (
 
 	"github.com/sadatdaniel/download_me_not/internal/api"
 	"github.com/sadatdaniel/download_me_not/internal/config"
+	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
+	"github.com/sadatdaniel/download_me_not/internal/jobs"
+	"github.com/sadatdaniel/download_me_not/internal/netguard"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
@@ -50,9 +54,10 @@ func main() {
 	pf.StringVar(&srvToken, "token", os.Getenv("DMN_TOKEN"), "API token (env DMN_TOKEN)")
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
-		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), rmCmd(), watchCmd())
+		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
+		jobAction("pause"), jobAction("resume"))
 	for name, ms := range map[string]string{
-		"add": "M1", "pause": "M1", "resume": "M1", "mode": "M1", "copy": "M3", "formats": "M3",
+		"copy": "M3", "formats": "M3",
 		"peers": "M2", "pieces": "M2", "trackers": "M2", "limits": "M2", "recheck": "M2",
 		"cookies": "M3", "update": "M3", "pair": "M3", "uninstall": "M3",
 	} {
@@ -129,19 +134,27 @@ func serveCmd() *cobra.Command {
 		for n, p := range cfg.Providers {
 			pcfg[n] = provider.Settings{Enabled: p.Enabled, Settings: p.Settings}
 		}
-		// ponytail: the torrent engine is created by the job layer in M1/M2, so a bare `serve`
-		// never joins the public DHT (AGENTS.md rule 7).
-		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys,
-			Providers: provider.NewRegistry(pcfg, cfg.Paths.Data)})
-		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
+		reg := provider.NewRegistry(pcfg, cfg.Paths.Data)
+		// The torrent engine starts with the first torrent job, so a server that only does web
+		// downloads never opens a torrent port or joins the DHT.
+		jm := jobs.New(jobs.Options{DB: db, Downloads: cfg.Paths.Downloads, Client: netguard.Client(), Allowed: reg.Enabled,
+			Connections: setting(cfg, "web", "connections", 16),
+			NewEngine: func() (engine.Engine, error) {
+				return engine.New(engine.Options{DataDir: cfg.Paths.Downloads, ListenPort: setting(cfg, "torrent", "port", 42069), Control: netguard.Safe})
+			}})
+		jobsDone := make(chan error, 1)
+		go func() { jobsDone <- jm.Run(ctx) }()
+		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm})
+		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()
 			sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			srv.Shutdown(sctx)
 		}()
+		defer func() { stop(); <-jobsDone }() // runners save their resume state before the DB closes
 		fmt.Fprintf(os.Stderr, "dmn %s listening on %s, downloads in %s\n", version, cfg.Server.Listen, cfg.Paths.Downloads)
 		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			return err
@@ -149,6 +162,23 @@ func serveCmd() *cobra.Command {
 		return nil
 	}
 	return c
+}
+
+// setting reads an integer provider setting (YAML and env give different number types).
+func setting(cfg *config.Config, prov, key string, def int) int {
+	switch v := cfg.Providers[prov].Settings[key].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case string:
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 func loopback(addr string) bool {
@@ -328,9 +358,17 @@ func lsCmd() *cobra.Command {
 					return err
 				}
 				return show(jobs, func() {
-					rows := [][]string{{"ID", "KIND", "STATE", "NAME"}}
+					rows := [][]string{{"ID", "KIND", "STATE", "PROGRESS", "NAME"}}
 					for _, j := range jobs {
-						rows = append(rows, []string{j.ID, j.Kind, j.State, j.Name})
+						pct := "-"
+						if j.Total > 0 {
+							pct = fmt.Sprintf("%.1f%%", 100*float64(j.Done)/float64(j.Total))
+						}
+						name := j.Name
+						if j.Error != "" {
+							name += "  (" + j.Error + ")"
+						}
+						rows = append(rows, []string{j.ID, j.Kind, j.State, pct, name})
 					}
 					table(rows)
 				})
@@ -382,11 +420,67 @@ func rmCmd() *cobra.Command {
 		}}
 }
 
+func addCmd() *cobra.Command {
+	c := &cobra.Command{Use: "add <url | magnet | file.torrent>", Short: "Add a download", Args: cobra.ExactArgs(1)}
+	mode := c.Flags().String("mode", "standard", "standard or stream (watch while it downloads)")
+	headers := c.Flags().StringArrayP("header", "H", nil, `request header, e.g. -H "Cookie: a=b" (repeatable)`)
+	c.RunE = func(_ *cobra.Command, a []string) error {
+		req := jobs.AddRequest{Source: a[0], Mode: *mode, Header: map[string]string{}}
+		if strings.HasSuffix(strings.ToLower(a[0]), ".torrent") {
+			if b, err := os.ReadFile(a[0]); err == nil { // a local file; otherwise treat it as a URL
+				req.Source, req.Torrent = "", b
+			}
+		}
+		for _, h := range *headers {
+			k, v, ok := strings.Cut(h, ":")
+			if !ok {
+				return fmt.Errorf("header %q: want \"Name: value\"", h)
+			}
+			req.Header[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+		var j store.Job
+		if err := call("POST", "/v1/jobs", req, &j); err != nil {
+			return err
+		}
+		return show(j, func() { fmt.Printf("%s  %s  %s\n", j.ID, j.Kind, j.Source) })
+	}
+	return c
+}
+
+func jobAction(name string) *cobra.Command {
+	return &cobra.Command{Use: name + " <id>", Short: name + " a download", Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, a []string) error {
+			return call("POST", "/v1/jobs/"+url.PathEscape(a[0])+"/"+name, nil, nil)
+		}}
+}
+
+func modeCmd() *cobra.Command {
+	return &cobra.Command{Use: "mode <id> <standard|stream>", Short: "Switch download mode while it runs", Args: cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, a []string) error {
+			return call("PUT", "/v1/jobs/"+url.PathEscape(a[0])+"/mode", map[string]string{"mode": a[1]}, nil)
+		}}
+}
+
+func cancelCmd() *cobra.Command {
+	c := &cobra.Command{Use: "cancel <id>", Short: "Stop and forget a download", Args: cobra.ExactArgs(1)}
+	del := c.Flags().Bool("delete-files", false, "also delete its files")
+	c.RunE = func(_ *cobra.Command, a []string) error {
+		return call("DELETE", "/v1/jobs/"+url.PathEscape(a[0])+"?deleteFiles="+strconv.FormatBool(*del), nil, nil)
+	}
+	return c
+}
+
 func watchCmd() *cobra.Command {
-	return &cobra.Command{Use: "watch <path>", Short: "Print a short-lived stream URL for a player", Args: cobra.ExactArgs(1),
+	return &cobra.Command{Use: "watch <id | /path>", Short: "Print a short-lived stream URL for a player (a job also while it downloads)", Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, a []string) error {
 			var out map[string]string
-			if err := call("POST", "/v1/fs/sign", map[string]any{"path": a[0]}, &out); err != nil {
+			var err error
+			if strings.HasPrefix(a[0], "/") {
+				err = call("POST", "/v1/fs/sign", map[string]any{"path": a[0]}, &out)
+			} else {
+				err = call("POST", "/v1/jobs/"+url.PathEscape(a[0])+"/sign", nil, &out)
+			}
+			if err != nil {
 				return err
 			}
 			u := strings.TrimRight(srvURL, "/") + out["url"]

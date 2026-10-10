@@ -12,6 +12,7 @@ import (
 
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
+	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 )
@@ -35,7 +36,9 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	}
 	f, _ := fsapi.New(dl, []byte("key"))
 	cfgPath := filepath.Join(dir, "config.yaml")
-	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: provider.NewRegistry(nil, dir)})
+	reg := provider.NewRegistry(nil, dir)
+	jm := jobs.New(jobs.Options{DB: db, Downloads: dl, Client: http.DefaultClient, Allowed: reg.Enabled})
+	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm})
 	srv := httptest.NewServer(h)
 	t.Cleanup(func() { srv.Close(); db.Close(); f.Close() })
 	return srv, cfgPath
@@ -78,10 +81,15 @@ func TestAuthAndScopes(t *testing.T) {
 		{"GET", "/v1/fs/stat?path=/../etc/passwd", "read-tok", "", 404},
 		{"DELETE", "/v1/fs?path=/y", "write-tok", "", 204},
 		{"DELETE", "/v1/fs?path=/", "write-tok", "", 400},
+		{"POST", "/v1/jobs", "read-tok", `{"source":"https://example.com/x"}`, 403},
+		{"POST", "/v1/jobs", "write-tok", `{"source":"https://example.com/x"}`, 201},
+		{"POST", "/v1/jobs", "write-tok", `{"source":"ftp://example.com/x"}`, 400},
 		{"PUT", "/v1/providers/web/enabled", "write-tok", `{"enabled":false}`, 403},
 		{"PUT", "/v1/providers/web/enabled", "admin-tok", `{"enabled":false}`, 204},
 		{"PUT", "/v1/providers/local/enabled", "admin-tok", `{"enabled":false}`, 400},
-		{"POST", "/v1/jobs", "write-tok", `{"source":"https://example.com/x"}`, 501},
+		{"POST", "/v1/jobs", "write-tok", `{"source":"https://example.com/y"}`, 400}, // web provider now off
+		{"GET", "/v1/jobs/nope", "read-tok", "", 404},
+		{"GET", "/v1/jobs/nope/stream", "read-tok", "", 404},
 		{"GET", "/v1/raw/video.mp4", "", "", 401},
 		{"GET", "/v1/raw/video.mp4", "read-tok", "", 200},
 	}

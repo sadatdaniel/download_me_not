@@ -36,6 +36,7 @@ type Options struct {
 	Connections     int                           // per web download, default 16
 	MetadataTimeout time.Duration                 // default 5 min
 	Tick            time.Duration                 // reconcile interval, default 2 s
+	Allowed         func(kind string) bool        // provider toggles; nil = all allowed
 }
 
 var (
@@ -151,6 +152,9 @@ func (m *Manager) Add(r AddRequest) (store.Job, bool, error) {
 		}
 		j.Kind, j.Source = "web", r.Source
 		meta = webMeta{Header: r.Header}
+	}
+	if m.o.Allowed != nil && !m.o.Allowed(j.Kind) {
+		return store.Job{}, false, fmt.Errorf("the %s provider is switched off", j.Kind)
 	}
 	j.Meta, _ = json.Marshal(meta)
 	if err := store.InsertJob(m.o.DB, j); err != nil {
