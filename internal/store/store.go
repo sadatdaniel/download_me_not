@@ -5,10 +5,12 @@ package store
 import (
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"sort"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -95,30 +97,96 @@ func backup(src, dst string) error {
 }
 
 type Job struct {
-	ID      string `json:"id"`
-	Kind    string `json:"kind"` // web, torrent, video
-	Source  string `json:"source"`
-	Mode    string `json:"mode"` // standard, stream
-	State   string `json:"state"`
-	Name    string `json:"name"`
-	Error   string `json:"error,omitempty"`
-	Created int64  `json:"created"`
-	Updated int64  `json:"updated"`
+	ID       string          `json:"id"`
+	Kind     string          `json:"kind"` // web, torrent, video
+	Source   string          `json:"source"`
+	Mode     string          `json:"mode"`  // standard, stream
+	Want     string          `json:"want"`  // running, paused (desired, set by the user)
+	State    string          `json:"state"` // queued, probing, metadata, downloading, paused, done, failed
+	Name     string          `json:"name"`
+	Path     string          `json:"path,omitempty"` // final path inside the download folder
+	InfoHash string          `json:"infohash,omitempty"`
+	Done     int64           `json:"done"`
+	Total    int64           `json:"total"` // -1 = unknown
+	Error    string          `json:"error,omitempty"`
+	Created  int64           `json:"created"`
+	Updated  int64           `json:"updated"`
+	Meta     json.RawMessage `json:"-"` // kind-specific resume state
+}
+
+const jobCols = `id, kind, source, mode, want, state, name, path, infohash, done, total, error, meta, created, updated`
+
+func scanJob(r interface{ Scan(...any) error }) (Job, error) {
+	var j Job
+	var meta string
+	err := r.Scan(&j.ID, &j.Kind, &j.Source, &j.Mode, &j.Want, &j.State, &j.Name, &j.Path, &j.InfoHash,
+		&j.Done, &j.Total, &j.Error, &meta, &j.Created, &j.Updated)
+	j.Meta = json.RawMessage(meta)
+	return j, err
 }
 
 func ListJobs(db *sql.DB) ([]Job, error) {
-	rows, err := db.Query(`SELECT id, kind, source, mode, state, name, error, created, updated FROM jobs ORDER BY created DESC`)
+	rows, err := db.Query(`SELECT ` + jobCols + ` FROM jobs ORDER BY created DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	jobs := []Job{}
 	for rows.Next() {
-		var j Job
-		if err := rows.Scan(&j.ID, &j.Kind, &j.Source, &j.Mode, &j.State, &j.Name, &j.Error, &j.Created, &j.Updated); err != nil {
+		j, err := scanJob(rows)
+		if err != nil {
 			return nil, err
 		}
 		jobs = append(jobs, j)
 	}
 	return jobs, rows.Err()
+}
+
+func GetJob(db *sql.DB, id string) (Job, error) {
+	return scanJob(db.QueryRow(`SELECT `+jobCols+` FROM jobs WHERE id = ?`, id))
+}
+
+func JobByInfoHash(db *sql.DB, ih string) (Job, error) {
+	return scanJob(db.QueryRow(`SELECT `+jobCols+` FROM jobs WHERE infohash = ? LIMIT 1`, ih))
+}
+
+func InsertJob(db *sql.DB, j Job) error {
+	if len(j.Meta) == 0 {
+		j.Meta = json.RawMessage("{}")
+	}
+	_, err := db.Exec(`INSERT INTO jobs (`+jobCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		j.ID, j.Kind, j.Source, j.Mode, j.Want, j.State, j.Name, j.Path, j.InfoHash, j.Done, j.Total, j.Error, string(j.Meta), j.Created, j.Updated)
+	return err
+}
+
+// SetJob updates only the given columns, so concurrent writers (runner progress, API pause) never
+// overwrite each other's fields.
+func SetJob(db *sql.DB, id string, f map[string]any) error {
+	keys := make([]string, 0, len(f))
+	for k := range f {
+		if !mutable[k] {
+			return fmt.Errorf("store: column %q is not updatable", k)
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	q, args := "UPDATE jobs SET ", []any{}
+	for _, k := range keys {
+		q += k + " = ?, "
+		v := f[k]
+		if m, ok := v.(json.RawMessage); ok {
+			v = string(m)
+		}
+		args = append(args, v)
+	}
+	_, err := db.Exec(q+"updated = ? WHERE id = ?", append(args, time.Now().Unix(), id)...)
+	return err
+}
+
+var mutable = map[string]bool{"mode": true, "want": true, "state": true, "name": true, "path": true,
+	"infohash": true, "done": true, "total": true, "error": true, "meta": true}
+
+func DeleteJob(db *sql.DB, id string) error {
+	_, err := db.Exec(`DELETE FROM jobs WHERE id = ?`, id)
+	return err
 }

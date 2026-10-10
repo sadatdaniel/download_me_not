@@ -23,7 +23,7 @@ func TestOpenMigrateReopen(t *testing.T) {
 	}
 	defer db.Close()
 	jobs, err := ListJobs(db)
-	if err != nil || len(jobs) != 1 || jobs[0].State != "queued" {
+	if err != nil || len(jobs) != 1 || jobs[0].State != "queued" || jobs[0].Want != "running" || jobs[0].Total != -1 {
 		t.Fatalf("jobs=%v err=%v", jobs, err)
 	}
 	if m, _ := filepath.Glob(path + ".v*.bak"); len(m) != 0 {

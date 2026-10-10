@@ -326,3 +326,30 @@ func (t *tor) Drop(deleteData bool) error {
 	}
 	return errors.Join(errs...)
 }
+
+// InfoHash returns the v1 infohash (hex) of a magnet URI or .torrent bytes without adding it,
+// for duplicate detection before the engine is even started.
+func InfoHash(b []byte) (string, error) {
+	if bytes.HasPrefix(b, []byte("magnet:")) {
+		m, err := metainfo.ParseMagnetV2Uri(string(b))
+		if err != nil {
+			return "", err
+		}
+		if !m.InfoHash.Ok {
+			return "", ErrV2Only
+		}
+		return m.InfoHash.Value.HexString(), nil
+	}
+	mi, err := metainfo.Load(bytes.NewReader(b))
+	if err != nil {
+		return "", fmt.Errorf("reading .torrent: %w", err)
+	}
+	info, err := mi.UnmarshalInfo()
+	if err != nil {
+		return "", err
+	}
+	if !info.HasV1() {
+		return "", ErrV2Only
+	}
+	return mi.HashInfoBytes().HexString(), nil
+}
