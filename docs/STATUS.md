@@ -1,7 +1,7 @@
 # Status
 
-**Current state:** Step 2 (scaffold) done, apart from the first CI run on GitHub. `dmn` builds static; setup → serve → ls/mkdir/mv/rm/watch/providers/doctor/config work end to end. All tests pass offline. The torrent engine exists (internal/engine) but is not started by `serve` yet (job layer is M1).
-**Next action:** 1) Check the first GitHub Actions run (`gh run list`) and fix anything red. 2) Write the M1 plan: job manager (crash-only + reconcile loop, docs/architecture.md), `add`, the IDM-grade HTTP downloader (dynamic segmentation, resume, retry, header passthrough), stream mode, ZIP folder download and copy, `doctor --selftest`.
+**Current state:** Step 2 done, CI green (spike suite runs manually only). Working on M1.
+**Next action:** M1 in this order (tick as you go): see the M1 checklist below.
 **Blockers:** none.
 
 ## Checklist
@@ -35,6 +35,13 @@
 
 ### Milestones (each gets its own plan)
 - [ ] M1 core: IDM-grade HTTP downloader (dynamic segmentation, resume, retry, header passthrough, aria2c benchmark), queue, stream mode, folder API
+  - [ ] internal/httpdl: probe (size, ranges, ETag, filename), dynamic segmentation (work stealing, split the largest remainder), resume from a saved segment map, retry with backoff, header passthrough, single-connection stream mode, .part then rename without overwrite
+  - [ ] internal/jobs: crash-only manager; DB keeps desired state (`want`), a reconcile loop starts and stops runners (recover per job), max active, progress snapshots to SSE; torrent jobs start the engine lazily
+  - [ ] API + CLI: add (URL, magnet, .torrent), get, pause, resume, mode, cancel; /v1/jobs/{id}/stream for files still downloading (blocks until bytes arrive)
+  - [ ] fsapi: ZIP folder download, copy
+  - [ ] `doctor --selftest`: local HTTP plus loopback torrent, offline
+  - [ ] Benchmark against aria2c on a throttled local server (aria2c in a throwaway container)
+  - [ ] Later in M1: FTP (jlaffaye/ftp), global rate limit, re-resolve expired links
 - [ ] M2 torrent management (§5.9 "ours" items from engine-spike.md)
 - [ ] M2 "swarm memory" (user idea, 2026-10-10): learn trackers ranked by announce success plus a persisted DHT node cache in a new SQLite table; auto-add learned trackers to new **public** torrents only (never when the private flag is set). Check first how to get per-tracker results, since anacrolix has no status API
 - [ ] M3 integrations: yt-dlp, rclone and Drive (device flow, `drive.file`), CertMagic, install.sh, self-update, `pair`
