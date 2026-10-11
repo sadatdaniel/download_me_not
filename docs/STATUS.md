@@ -8,7 +8,7 @@
 3. M2.7 multi-container torrent swarm with netem (isolated network); a full code audit (`/ponytail-audit`) and fixes.
 4. Then, when the owner says so: M4 Flutter app (plan in the checklist below).
 
-**Open (known gaps):** CI on main is red from a flaky timing test (internal/jobs TestPauseResumeAndCrashRecovery: the job finishes before the pause on fast runners), real Google OAuth client ID (owner creates it; Drive tested only against a fake Google), GHCR image visibility (owner sets it public in the GitHub UI), FTP (deferred), per-torrent speed limits, licence choice.
+**Open (known gaps):** real Google OAuth client ID (owner creates it; Drive tested only against a fake Google), GHCR image visibility (owner sets it public in the GitHub UI), FTP (deferred), per-torrent speed limits, licence choice.
 **Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
@@ -89,3 +89,4 @@
 - 2026-10-11: owner's first Oracle install showed ffmpeg missing; install.sh now installs it (v0.1.5), simulation checks it and passes.
 - 2026-10-11: end of the first conversation. Handoff: STATUS next actions (web-panel pairing first), PROMPT.md refreshed.
 - 2026-10-11: web-panel pairing: POST /v1/pair (admin) + Settings card with a server-rendered QR (rsc.io/qr); CLI setup/pair share api.AddToken. Released v0.1.6 (release workflow green).
+- 2026-10-11: fixed the flaky jobs test (test server 4x slower so pause/resume happen mid-download); CI green again.

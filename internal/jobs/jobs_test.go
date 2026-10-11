@@ -157,7 +157,7 @@ func TestWebJob(t *testing.T) {
 func TestPauseResumeAndCrashRecovery(t *testing.T) {
 	data := payload(4<<20, 2)
 	var served atomic.Int64
-	url := fileServer(t, data, 5*time.Millisecond, &served)
+	url := fileServer(t, data, 20*time.Millisecond, &served) // ~1.3s total: the 300ms steps below must not reach the end
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "j.db")
 	e := start(t, dbPath, dir)
