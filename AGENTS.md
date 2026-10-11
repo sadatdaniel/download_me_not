@@ -71,6 +71,11 @@ spike/bench/       httpdl vs aria2c benchmark (docs/benchmark.md)
 5. **Record the why.** Decisions go in scope §17 with the reason; facts you verified go in §19.
 6. **No C dependencies.** libtorrent (C++ via cgo) was rejected because it breaks the static build and portability. It's a last-resort fallback behind `internal/engine` only.
 
+## Releasing
+
+- Tag `vX.Y.Z` on main and push the tag. The release workflow runs GoReleaser (linux amd64/arm64/armv7, `dmn_<version>_linux_<arch>.tar.gz`, `checksums.txt` signed with the CI secret RELEASE_SIGNING_KEY, `install.sh`, THIRD_PARTY_LICENSES.txt), then `update-e2e` updates the previous release to the new one through GitHub. Both must be green.
+- While the repo is private: `gh release download vX.Y.Z -p '*' -D dir` then `sudo sh dir/install.sh --from dir`.
+
 ## Definition of done (every session)
 
 - `gofmt -l .` prints nothing, `go vet ./...` is clean, and tests pass in the dev container (CI checks all three).

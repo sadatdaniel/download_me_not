@@ -1,7 +1,7 @@
 # Status
 
-**Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** Cut the first release (v0.1.0) to exercise GoReleaser, signing and self-update end to end on the private repo. Then M4 Android app (decide Kotlin vs Flutter with the user). Open: Pebble ACME test, Docker image publishing, M2.7 swarm, FTP, real Google client ID.
+**Current state:** M1, M2 (minus M2.7) and M3 (minus Pebble test, Docker image, real Google client) are done. Releases v0.1.1 and v0.1.2 are published on the private repo; install.sh verified a real signed release, and the release workflow proves self-update from the previous release on every tag. (v0.1.0 has misnamed archives; ignore it.)
+**Next action:** Docker image (tier 1: bundles ffmpeg, yt-dlp, deno, rclone; multi-arch; GHCR on tags). Then ask the owner Kotlin vs Flutter and start M4 Android. Open: Pebble ACME test, M2.7 swarm, FTP, real Google client ID.
 **Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
