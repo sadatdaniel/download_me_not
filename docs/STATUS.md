@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** M3.4b ACME (see the checklist). M3.3 Google Drive is waiting for the user's Google Cloud OAuth client ID ("TVs and Limited Input devices" type).
+**Next action:** M3.3 Google Drive: device-flow sign-in (fake OAuth server in tests), rclone runner (tested with a local remote), copy jobs, post-completion Drive copy. Then M3.4b, M3.5, M3.6.
 **Blockers:** none.
 
 ## Checklist
@@ -60,6 +60,7 @@
   - [x] M3.4 HTTPS: server.tls auto|off|self-signed, fingerprint pinning (app and CLI --fingerprint), live token reload, `pair` QR (URL, new device token, fingerprint)
   - [ ] M3.4b ACME: CertMagic for domains (HTTP-01/TLS-ALPN, DNS-01 via libdns cloudflare/duckdns), Pebble for local tests, `doctor` port and expiry checks
   - [ ] M3.5 install.sh, systemd unit, uninstall; self-update (go-selfupdate, ECDSA, confirm-after-boot); managed tool updates; public releases repo
+  - [ ] M3.6 web UI (seedr.cc-style): queue with live progress, add (URL, magnet, .torrent, formats), file manager, player, settings rendered from provider JSON Schema, Connect Google Drive; embedded in the binary, same /v1 API
 - [ ] M4 Android app (Kotlin + Compose + DocumentsProvider proposed)
 - [ ] M5 browser extension (proposed): send downloads with cookies and headers, media sniffer
 

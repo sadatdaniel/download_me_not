@@ -544,6 +544,9 @@ Open-core: open-source the server and CLI, keep the paid Android app closed.
 | Swarm memory: learned trackers (ranked) and a DHT node cache in SQLite, auto-added to new public torrents only, never private ones; no peer IPs kept | Built (2026-10-11): learned_trackers table (success count, 90-day window), DHT node cache file; URLs with queries, credentials or passkey-like path segments are never stored |
 | Stack in use: cobra, koanf, huma v2, modernc.org/sqlite, code.dny.dev/ssrf, os.Root, anacrolix/torrent | Decided (2026-10-10), replaces the "Proposed" stack row |
 | FTP downloads deferred from the M1 core: rare today, and passive-mode data connections need their own SSRF guard. Build when requested | Proposed (2026-10-11) |
+| Web UI is first-class (seedr.cc-style control panel, embedded in the binary), including "Connect Google Drive" via the device flow (code + google.com/device, no redirect URLs) | Decided (2026-10-11) |
+| Google OAuth client ID: configurable (gdrive settings), created later in the owner's Google Cloud account; never committed | Decided (2026-10-11) |
+| Releases publish to the private repo for now; the repo goes public when the project matures (install.sh and self-update for others work from then) | Decided (2026-10-11); replaces the separate public releases repo idea |
 | Testing stays legal and local: no public torrent swarms, trackers or DHT from the dev machine; isolated Docker swarm with self-generated content only (AGENTS.md rule 7) | Decided (2026-10-10) |
 | Android: Kotlin + Compose with a DocumentsProvider; notifications through UnifiedPush/ntfy | Proposed, decide at M4 |
 
