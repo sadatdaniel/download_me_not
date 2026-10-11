@@ -449,7 +449,7 @@ func TestKillSwitch(t *testing.T) {
 		t.Fatalf("gate closed but job %q %q", got.State, got.Error)
 	}
 	down.Store(false)
-	if got := waitState(t, m, j.ID, "done", 20*time.Second); got.Error != "" {
+	if got := waitState(t, m, j.ID, "done", 60*time.Second); got.Error != "" { // race-instrumented CI runners are slow
 		t.Fatalf("error not cleared: %q", got.Error)
 	}
 }

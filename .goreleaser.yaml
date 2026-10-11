@@ -1,6 +1,10 @@
 # Binary name "dmn" is a placeholder (AGENTS.md rule 10).
 # M3 adds: ECDSA signature of checksums.txt for go-selfupdate, a public releases repo, and the Docker image.
 version: 2
+before:
+  hooks:
+    # Licences of everything linked into the binary; fails on GPL/AGPL (AGENTS.md rule 3).
+    - sh -c "sh scripts/third-party.sh > THIRD_PARTY_LICENSES.txt"
 builds:
   - id: dmn
     main: ./cmd/dmn

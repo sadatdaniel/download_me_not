@@ -2,7 +2,7 @@
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
 **Next action:** Cut the first release (v0.1.0) to exercise GoReleaser, signing and self-update end to end on the private repo. Then M4 Android app (decide Kotlin vs Flutter with the user). Open: Pebble ACME test, Docker image publishing, M2.7 swarm, FTP, real Google client ID.
-**Blockers:** none.
+**Blockers:** 2026-10-11: the host C: drive is full (Docker's disk went read-only). The owner must free space or compact docker_data.vhdx (wsl --shutdown, then Optimize-VHD) before Docker work continues. Then remove this project's rebuildable items only: goreleaser/goreleaser image and its stopped container, volume dmn-dev_dmn-gocache.
 
 ## Checklist
 

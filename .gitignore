@@ -31,3 +31,4 @@ Thumbs.db
 
 # release signing key (CI only)
 release-key.pem
+/THIRD_PARTY_LICENSES.txt
