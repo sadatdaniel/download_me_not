@@ -499,6 +499,12 @@ func configCmd() *cobra.Command {
 		var v any = a[1]
 		if a[1] == "true" || a[1] == "false" {
 			v = a[1] == "true"
+		} else if strings.HasPrefix(a[1], "[") { // lists, e.g. server.cors '["http://localhost:5000"]'
+			var l []any
+			if err := json.Unmarshal([]byte(a[1]), &l); err != nil {
+				return fmt.Errorf("list values are JSON arrays: %w", err)
+			}
+			v = l
 		}
 		return config.Set(cfgPath, a[0], v)
 	}}

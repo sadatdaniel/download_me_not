@@ -34,6 +34,8 @@ type Config struct {
 		HTTPListen  string `koanf:"httplisten"`  // acme: port 80 listener for HTTP-01 and redirects
 		ACMECA      string `koanf:"acmeca"`      // acme: CA directory URL; empty = Let's Encrypt
 		ACMECARoot  string `koanf:"acmecaroot"`  // acme: PEM root for a private CA's TLS (step-ca, tests)
+		// CORS: browser origins (e.g. a Flutter web dev server) allowed to call the API. Empty = same origin only.
+		CORS []string `koanf:"cors"`
 	} `koanf:"server"`
 	Paths struct {
 		Data      string `koanf:"data"`

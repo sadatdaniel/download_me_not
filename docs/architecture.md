@@ -33,6 +33,7 @@ Goal: a server people install once and forget. The approach: **list everything t
 | TLS certificate renewal fails | Rare | CertMagic renews early and retries | `doctor` reports expiry | CertMagic's built-in backoff; alert in the app at under 14 days |
 | SSRF / hostile input | Constant | `netguard` on every dial, also for yt-dlp (proxy) and torrent HTTP | Tests | — |
 | Phone (Termux) kills the process | Common | Crash-only design | — | Restart loop script plus reconcile on start |
+| Hostile or huge archive opened in the file manager | Occasional | Browsing is read-only (no unpack); entry names checked by fs.ValidPath; the archive opens through os.Root | 400 with the library's error; encrypted archives get a clear message | Nothing to repair. Known limit: compressed tars are decompressed from the start on each request (ponytail in extract/browse.go) |
 
 ## Self-test: one command, used everywhere
 

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/zip"
 	"bufio"
 	"encoding/json"
 	"io"
@@ -300,5 +301,66 @@ func TestPair(t *testing.T) {
 	}
 	if code, _ := call(t, srv, "GET", "/v1/jobs", "admin-tok", ""); code != 200 {
 		t.Fatalf("other tokens must survive: %d", code)
+	}
+}
+
+func TestArchiveBrowse(t *testing.T) {
+	srv, cfgPath := newTestServer(t)
+	dl := filepath.Join(filepath.Dir(cfgPath), "dl") // newTestServer's download folder
+	zf, _ := os.Create(filepath.Join(dl, "pack.zip"))
+	zw := zip.NewWriter(zf)
+	w, _ := zw.Create("a/hello.txt")
+	w.Write([]byte("hello from the zip"))
+	w, _ = zw.CreateHeader(&zip.FileHeader{Name: "stored.bin", Method: zip.Store})
+	w.Write([]byte("0123456789"))
+	zw.Close()
+	zf.Close()
+
+	code, b := call(t, srv, "GET", "/v1/archive?path=/pack.zip", "read-tok", "")
+	if code != 200 || !strings.Contains(b, `"name":"a"`) || !strings.Contains(b, `"name":"stored.bin"`) {
+		t.Fatalf("root: %d %s", code, b)
+	}
+	if code, b = call(t, srv, "GET", "/v1/archive?path=/pack.zip&dir=a", "read-tok", ""); code != 200 || !strings.Contains(b, `"path":"a/hello.txt"`) {
+		t.Fatalf("dir a: %d %s", code, b)
+	}
+	if code, b = call(t, srv, "GET", "/v1/archive/raw/pack.zip?entry=a/hello.txt", "read-tok", ""); code != 200 || b != "hello from the zip" {
+		t.Fatalf("raw: %d %q", code, b)
+	}
+	if code, _ = call(t, srv, "GET", "/v1/archive/raw/pack.zip?entry=a/hello.txt", "", ""); code != 401 {
+		t.Fatalf("raw without token: %d", code)
+	}
+	_, b = call(t, srv, "POST", "/v1/fs/sign", "read-tok", `{"path":"/pack.zip"}`)
+	var sig struct{ URL string }
+	json.Unmarshal([]byte(b), &sig)
+	q := sig.URL[strings.Index(sig.URL, "?"):]
+	if code, b = call(t, srv, "GET", "/v1/archive/raw/pack.zip"+q+"&entry=stored.bin", "", ""); code != 200 || b != "0123456789" {
+		t.Fatalf("signed raw: %d %q", code, b)
+	}
+	for _, bad := range []string{"../video.mp4", "/etc/passwd", "a"} {
+		if code, _ = call(t, srv, "GET", "/v1/archive/raw/pack.zip?entry="+url.QueryEscape(bad), "read-tok", ""); code == 200 {
+			t.Fatalf("entry %q served", bad)
+		}
+	}
+	if code, _ = call(t, srv, "GET", "/v1/archive?path=/video.mp4", "read-tok", ""); code != 400 {
+		t.Fatalf("not an archive: %d", code)
+	}
+}
+
+func TestCORS(t *testing.T) {
+	h := cors([]string{"http://localhost:5000"}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	req := httptest.NewRequest("OPTIONS", "/v1/jobs", nil)
+	req.Header.Set("Origin", "http://localhost:5000")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 204 || rec.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5000" {
+		t.Fatalf("preflight: %d %v", rec.Code, rec.Header())
+	}
+	req = httptest.NewRequest("GET", "/v1/jobs", nil)
+	req.Header.Set("Origin", "https://evil.example")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("unlisted origin allowed")
 	}
 }

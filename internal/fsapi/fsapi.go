@@ -48,6 +48,15 @@ func New(dir string, signKey []byte) (*FS, error) {
 
 func (f *FS) Close() error { return f.root.Close() }
 
+// Open opens a file for reading inside the root (archive browsing).
+func (f *FS) Open(p string) (*os.File, error) {
+	c, err := clean(p)
+	if err != nil {
+		return nil, err
+	}
+	return f.root.Open(c)
+}
+
 // clean turns an API path ("/", "/a/b", "a/b") into a root-relative one. os.Root still
 // enforces confinement; this only gives clear errors and a canonical form.
 func clean(p string) (string, error) {

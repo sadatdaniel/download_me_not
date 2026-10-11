@@ -555,6 +555,10 @@ Open-core: open-source the server and CLI, keep the paid Android app closed.
 | Testing stays legal and local: no public torrent swarms, trackers or DHT from the dev machine; isolated Docker swarm with self-generated content only (AGENTS.md rule 7) | Decided (2026-10-10) |
 | Pairing from the web panel: admin `POST /v1/pair` returns the dmn://pair payload and the QR as a PNG data URL, rendered server-side with rsc.io/qr (BSD, already in the module graph via qrterminal) instead of vendoring a JS QR encoder. The browser sends its own origin as the server URL. Token helpers moved from cmd/dmn to internal/api (AddToken, PairPayload) | Decided (2026-10-11) |
 | The app lives in its own private repo (sadatdaniel/download_me_not_app), not under app/ here: the server repo is public and the app may stay closed | Decided by the owner (2026-10-11) |
+| Archives open like folders: GET /v1/archive lists one level, /v1/archive/raw/{path}?entry= streams one file (token or the archive's signed link); read-only, nothing unpacked on disk | Decided (2026-10-11) |
+| server.cors (default empty): browser origins allowed to call the API, for testing the app's web build. Tokens are bearer headers, never cookies | Decided (2026-10-11) |
+| App: no uploads to the server; the only way in is a queued download (link, magnet, video page, .torrent). File manager works on what the server downloaded | Decided by the owner (2026-10-11) |
+| App player: media_kit (libmpv, LGPL dynamic) for tracks, dual subtitles, hwdec, buffer, codecs. Notifications only while the app runs (no push). App UI tested on Flutter web | Decided by the owner (2026-10-11) |
 | Android: Kotlin + Compose with a DocumentsProvider; notifications through UnifiedPush/ntfy | Proposed, decide at M4 |
 
 ## 18. Build order (handoff to Claude Code)

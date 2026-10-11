@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -138,6 +139,7 @@ func New(d Deps) (http.Handler, huma.API) {
 	mux.HandleFunc("GET /v1/raw/{path...}", s.raw)
 	mux.HandleFunc("GET /v1/jobs/{id}/stream", s.stream)
 	mux.HandleFunc("GET /v1/zip/{path...}", s.zip)
+	mux.HandleFunc("GET /v1/archive/raw/{path...}", s.archiveRaw)
 	ui := webui.Handler()
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v1/") {
@@ -146,7 +148,32 @@ func New(d Deps) (http.Handler, huma.API) {
 		}
 		ui.ServeHTTP(w, r)
 	})
-	return mux, api
+	return cors(d.Cfg.Server.CORS, mux), api
+}
+
+// cors lets the listed browser origins (a Flutter web dev server) call the API. Tokens travel in the
+// Authorization header, never in cookies, so allowing an origin does not let it act on its own.
+func cors(origins []string, next http.Handler) http.Handler {
+	if len(origins) == 0 {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		o := r.Header.Get("Origin")
+		if o != "" && slices.Contains(origins, o) {
+			h := w.Header()
+			h.Set("Access-Control-Allow-Origin", o)
+			h.Add("Vary", "Origin")
+			h.Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Content-Disposition")
+			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+				h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE")
+				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Range")
+				h.Set("Access-Control-Max-Age", "600")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func op(id, method, path, scope, summary string) huma.Operation {
@@ -191,6 +218,7 @@ func (s *server) routes(api huma.API) {
 	s.toolRoutes(api)
 	s.updateRoutes(api)
 	s.pairRoutes(api)
+	s.archiveRoutes(api)
 
 	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
 		map[string]any{"progress": []jobs.Progress{}},
