@@ -33,6 +33,7 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
 
+	"github.com/sadatdaniel/download_me_not/internal/acme"
 	"github.com/sadatdaniel/download_me_not/internal/api"
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
@@ -211,8 +212,34 @@ func serveCmd() *cobra.Command {
 			if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 				return err
 			}
+		case "acme":
+			tok, err := box.Open("server.dnstoken", cfg.Server.DNSToken)
+			if err != nil {
+				return err
+			}
+			if cfg.Server.DNSToken != "" && !secret.IsSealed(cfg.Server.DNSToken) { // seal a hand-written token
+				if err := config.Set(cfgPath, "server.dnstoken", box.Seal("server.dnstoken", tok)); err != nil {
+					return err
+				}
+			}
+			tc, h80, err := acme.Setup(ctx, acme.Options{Domain: cfg.Server.Domain, Email: cfg.Server.Email,
+				DNSProvider: cfg.Server.DNSProvider, DNSToken: tok, StorageDir: filepath.Join(cfg.Paths.Data, "acme")})
+			if err != nil {
+				return err
+			}
+			s80 := &http.Server{Addr: cfg.Server.HTTPListen, Handler: h80, ReadHeaderTimeout: 10 * time.Second}
+			go func() {
+				if err := s80.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+					fmt.Fprintf(os.Stderr, "acme: %s unavailable (%v): HTTP-01 is off; TLS-ALPN on the HTTPS port or DNS-01 (server.dnsprovider) still work\n", cfg.Server.HTTPListen, err)
+				}
+			}()
+			go func() { <-ctx.Done(); s80.Close() }()
+			srv.TLSConfig = tc
+			if err := srv.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
 		default:
-			return fmt.Errorf("server.tls %q: use auto, off or self-signed (acme comes with M3.4b)", mode)
+			return fmt.Errorf("server.tls %q: use auto, off, self-signed or acme", mode)
 		}
 		return nil
 	}

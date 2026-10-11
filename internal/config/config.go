@@ -25,8 +25,12 @@ type Config struct {
 		Listen string `koanf:"listen"`
 		// TLS: auto (off on loopback, else self-signed), off (behind a proxy, tunnel or VPN), self-signed (LAN,
 		// app pins the fingerprint), acme (domain with automatic certificates).
-		TLS    string `koanf:"tls"`
-		Domain string `koanf:"domain"`
+		TLS         string `koanf:"tls"`
+		Domain      string `koanf:"domain"`
+		Email       string `koanf:"email"`       // acme: expiry notices from the CA
+		DNSProvider string `koanf:"dnsprovider"` // acme: cloudflare or duckdns for DNS-01 (no open ports needed)
+		DNSToken    string `koanf:"dnstoken"`    // acme: DNS API token; sealed automatically on first start
+		HTTPListen  string `koanf:"httplisten"`  // acme: port 80 listener for HTTP-01 and redirects
 	} `koanf:"server"`
 	Paths struct {
 		Data      string `koanf:"data"`
@@ -68,7 +72,7 @@ var FlagKeys = map[string]string{
 }
 
 // Secret keys are redacted by `config show`.
-var secret = []string{"auth."}
+var secret = []string{"auth.", "server.dnstoken"}
 
 func DefaultPath() string {
 	if p := os.Getenv("DMN_CONFIG"); p != "" {
@@ -84,10 +88,11 @@ func DefaultPath() string {
 func defaults() map[string]any {
 	home, _ := os.UserHomeDir()
 	return map[string]any{
-		"server.listen":   "127.0.0.1:8080",
-		"server.tls":      "auto",
-		"paths.data":      filepath.Join(home, ".local", "share", "dmn"),
-		"paths.downloads": filepath.Join(home, "Downloads", "dmn"),
+		"server.listen":     "127.0.0.1:8080",
+		"server.tls":        "auto",
+		"server.httplisten": ":80",
+		"paths.data":        filepath.Join(home, ".local", "share", "dmn"),
+		"paths.downloads":   filepath.Join(home, "Downloads", "dmn"),
 	}
 }
 
