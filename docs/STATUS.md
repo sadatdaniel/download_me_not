@@ -3,10 +3,12 @@
 **Current state (2026-10-11, second conversation):** Devices can now be paired from the web panel (Settings, "Pair a phone"; admin `POST /v1/pair`), unreleased until the next tag. Server side is feature-complete for the MVP except the items under "Open" below. Repo is **public** (history scrubbed: noreply email, no location; no licence file yet). Latest release **v0.1.6** (signed; the release workflow also proves self-update from the previous release and publishes the multi-arch Docker image to GHCR). The owner has **installed it on an Oracle Cloud ARM VM** with the one-liner and reached it through an SSH tunnel; ffmpeg was missing there, fixed in v0.1.5 (install.sh now installs it). `test/sim/run.sh` (Oracle-like VM, native + arm64) passes against v0.1.5. M4 (Flutter app) is **paused by the owner** until the server is confirmed in real use.
 
 **Next action, in order:**
-1. Help the owner finish the Oracle setup without SSH tunnels: open TCP 8080 in the VCN security list + iptables (docs/deploy.md), or a domain with ACME, or Tailscale (`--access proxy`). Confirm downloads, streaming, video and torrents work for real.
-2. `dmn doctor`: report open/blocked ports and certificate expiry (scope §5.10).
-3. M2.7 multi-container torrent swarm with netem (isolated network); a full code audit (`/ponytail-audit`) and fixes.
-4. Then, when the owner says so: M4 Flutter app (plan in the checklist below).
+0. **M4 app (resumed by the owner 2026-10-11)** in the separate private repo sadatdaniel/download_me_not_app (sibling folder `download_me_not_app`, Flutter on the Windows host). Scaffold done: pairing (QR, link, manual + fingerprint check), multiple servers, downloads with live progress, clipboard offer, Drive connect. Next: owner's feature list (player, file manager, archives, notifications, settings) in phases; see the app repo README.
+1. **Later (owner, 2026-10-11): install.sh opens the host firewall itself** (iptables/ufw/firewalld for the port and the torrent port, `--no-firewall` to skip) and checks reachability; the cloud security list stays a manual step. Test with test/sim.
+2. Help the owner finish the Oracle setup without SSH tunnels: open TCP 8080 in the VCN security list + iptables (docs/deploy.md), or a domain with ACME, or Tailscale (`--access proxy`). Confirm downloads, streaming, video and torrents work for real.
+3. `dmn doctor`: report open/blocked ports and certificate expiry (scope §5.10).
+4. M2.7 multi-container torrent swarm with netem (isolated network); a full code audit (`/ponytail-audit`) and fixes.
+5. M4 continues in the app repo (checklist below kept as the plan).
 
 **Open (known gaps):** real Google OAuth client ID (owner creates it; Drive tested only against a fake Google), GHCR image visibility (owner sets it public in the GitHub UI), FTP (deferred), per-torrent speed limits, licence choice.
 **Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
@@ -90,3 +92,4 @@
 - 2026-10-11: end of the first conversation. Handoff: STATUS next actions (web-panel pairing first), PROMPT.md refreshed.
 - 2026-10-11: web-panel pairing: POST /v1/pair (admin) + Settings card with a server-rendered QR (rsc.io/qr); CLI setup/pair share api.AddToken. Released v0.1.6 (release workflow green).
 - 2026-10-11: fixed the flaky jobs test (test server 4x slower so pause/resume happen mid-download); CI green again.
+- 2026-10-11: M4 resumed: app scaffold in the private repo download_me_not_app (analyze clean, unit tests + live pinned-TLS test against a self-signed dev server pass).
