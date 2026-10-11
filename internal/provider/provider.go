@@ -161,7 +161,11 @@ func (r *Registry) status(d def, enabled bool) (Status, string) {
 		return NeedsSignin, "sign in with `dmn providers config " + d.Name + "`"
 	}
 	if len(soft) > 0 {
-		return Ready, strings.Join(soft, ", ") + " not installed: some sites (YouTube) or formats may not work"
+		notes := make([]string, len(soft))
+		for i, t := range soft {
+			notes[i] = t + " not installed: " + softEffect[t]
+		}
+		return Ready, strings.Join(notes, "; ")
 	}
 	return Ready, ""
 }
@@ -286,4 +290,10 @@ func (r *Registry) Restart(name, key string) bool {
 	props, _ := d.Schema["properties"].(map[string]any)
 	p, _ := props[key].(map[string]any)
 	return p["x-restart"] == true
+}
+
+// softEffect says what is lost without an optional tool, in words a user can act on.
+var softEffect = map[string]string{
+	"deno":   "YouTube may offer fewer formats or refuse some videos",
+	"ffmpeg": "best-quality formats with separate video and audio cannot be merged (install it: sudo apt-get install ffmpeg)",
 }

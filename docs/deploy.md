@@ -39,6 +39,9 @@ Options (or the matching `DMN_*` environment variables):
 | `--version vX.Y.Z` | latest | A specific release |
 | `--no-start` | | Install without starting |
 
+The installer also installs ffmpeg with the system package manager (skip with `--no-ffmpeg`); the
+other helper tools (yt-dlp, deno, rclone) are installed and kept up to date by dmn itself.
+
 Re-running the installer upgrades or repairs and keeps your config and tokens.
 
 Service: `systemctl status dmn`, logs: `journalctl -u dmn -f`.

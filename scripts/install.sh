@@ -16,6 +16,7 @@ ACCESS=${DMN_ACCESS:-lan} # lan (self-signed), domain (acme), proxy (plain HTTP 
 VERSION=${DMN_VERSION:-latest}
 FROM=${DMN_FROM:-}
 START=1
+FFMPEG=1
 UNINSTALL=0
 PURGE=0
 
@@ -35,6 +36,7 @@ usage() {
 	echo "  --version vX.Y.Z     release to install (default latest)"
 	echo "  --from DIR           use release files from DIR instead of downloading"
 	echo "  --no-start           install but do not start the service"
+	echo "  --no-ffmpeg          do not install ffmpeg with the system package manager"
 	echo "  --yes                no questions (the installer asks none today)"
 	echo "  --uninstall          remove service and binary (keeps config and data)"
 	echo "  --purge              with --uninstall: also remove config and data (never the download folder)"
@@ -50,6 +52,7 @@ while [ $# -gt 0 ]; do
 	--version) VERSION=$2; shift ;;
 	--from) FROM=$2; shift ;;
 	--no-start) START=0 ;;
+	--no-ffmpeg) FFMPEG=0 ;;
 	--yes) ;;
 	--uninstall) UNINSTALL=1 ;;
 	--purge) PURGE=1 ;;
@@ -122,6 +125,24 @@ openssl dgst -sha256 -verify "$KEYFILE" -signature "$WORK/checksums.txt.sig" "$W
 	die "checksums.txt signature is not valid: refusing to install"
 (cd "$WORK" && grep " $TARBALL\$" checksums.txt | sha256sum -c - >/dev/null) || die "checksum mismatch for $TARBALL"
 tar -xzf "$WORK/$TARBALL" -C "$WORK" dmn
+
+# ffmpeg merges separate video and audio streams (best quality from video sites). The other helper
+# tools (yt-dlp, deno, rclone) are installed and updated by dmn itself; ffmpeg comes from the distro.
+if [ "$FFMPEG" -eq 1 ] && ! command -v ffmpeg >/dev/null 2>&1; then
+	say "installing ffmpeg with the system package manager"
+	if command -v apt-get >/dev/null 2>&1; then
+		(apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ffmpeg) >/dev/null 2>&1
+	elif command -v dnf >/dev/null 2>&1; then
+		dnf install -y -q ffmpeg >/dev/null 2>&1
+	elif command -v apk >/dev/null 2>&1; then
+		apk add -q ffmpeg >/dev/null 2>&1
+	elif command -v pacman >/dev/null 2>&1; then
+		pacman -S --noconfirm --needed ffmpeg >/dev/null 2>&1
+	elif command -v zypper >/dev/null 2>&1; then
+		zypper -q install -y ffmpeg >/dev/null 2>&1
+	fi || true
+	command -v ffmpeg >/dev/null 2>&1 || say "warning: ffmpeg could not be installed automatically (on RHEL-like systems it needs RPM Fusion). Install it later; downloads still work, but separate video and audio streams cannot be merged."
+fi
 
 if ! id dmn >/dev/null 2>&1; then
 	say "creating system user dmn"

@@ -49,6 +49,7 @@ run_pass() {
 	[ -n "$TOKEN" ] || fail "no token in the installer output"
 	grep -q "Scan with the app" "$HERE/install.log" || fail "no pairing QR"
 	vm systemctl is-active --quiet dmn || fail "service not running"
+	vm sh -c 'command -v ffmpeg' >/dev/null || fail "ffmpeg not installed by the installer"
 	ok "service active, version $(vm dmn version), token printed once, pairing QR shown"
 
 	step "Oracle's firewall blocks the panel until the ports are opened"
