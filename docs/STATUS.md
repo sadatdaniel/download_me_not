@@ -2,7 +2,7 @@
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
 **Next action:** Cut the first release (v0.1.0) to exercise GoReleaser, signing and self-update end to end on the private repo. Then M4 Android app (decide Kotlin vs Flutter with the user). Open: Pebble ACME test, Docker image publishing, M2.7 swarm, FTP, real Google client ID.
-**Blockers:** 2026-10-11: the host C: drive is full (Docker's disk went read-only). The owner must free space or compact docker_data.vhdx (wsl --shutdown, then Optimize-VHD) before Docker work continues. Then remove this project's rebuildable items only: goreleaser/goreleaser image and its stopped container, volume dmn-dev_dmn-gocache.
+**Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
 
@@ -70,3 +70,4 @@
 - 2026-10-10: Plan approved. Bootstrap: repo, agent docs, spec plus verification notes.
 - 2026-10-10: Legal-testing rule added (AGENTS.md rule 7). Engine spike: 20 offline checks, anacrolix kept; gaps: v2-only torrents, LSD.
 - 2026-10-10: Step 2 scaffold: all internal packages, CLI, API, CI, GoReleaser, Docker. Engine fixes: IPv4/IPv6 pinning on bind, Done() signal. libtorrent rejected (cgo).
+- 2026-10-11: M3.3-M3.6 built (Drive, HTTPS/ACME, tools, self-update, installer, web UI). Disk-full incident; resumed after cleanup. Releasing v0.1.0.
