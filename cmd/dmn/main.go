@@ -74,7 +74,7 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd())
 	for name, ms := range map[string]string{
 		"copy":   "M3",
 		"update": "M3", "uninstall": "M3",
@@ -185,9 +185,13 @@ func serveCmd() *cobra.Command {
 			Cookies:     ck,
 			Destination: destinations(cfg, reg, box),
 		})
+		inst := &tools.Installer{Client: netguard.Client(), DataDir: cfg.Paths.Data}
+		if cfg.Updates.Tools != "off" {
+			go maintainTools(ctx, inst, reg)
+		}
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
-		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box})
+		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box, Tools: inst})
 		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()
@@ -1427,6 +1431,49 @@ func providerConfigCmd() *cobra.Command {
 				fmt.Printf("%s = %v\n", k, out.Values[k])
 			}
 		})
+	}
+	return c
+}
+
+// maintainTools installs helper tools that enabled providers need and updates managed copies once a
+// day (checksum-verified, self-tested, previous copy kept). Failures are logged and retried next day.
+func maintainTools(ctx context.Context, inst *tools.Installer, reg *provider.Registry) {
+	need := map[string][]string{"video": {"yt-dlp", "deno"}, "gdrive": {"rclone"}}
+	t := time.NewTimer(time.Minute) // let the server settle first
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		for prov, names := range need {
+			for _, name := range names {
+				_, found := tools.Find(name, inst.DataDir)
+				managed := inst.Installed(name) != ""
+				if managed || (!found && reg.Enabled(prov)) {
+					if tag, err := inst.Install(ctx, name); err != nil {
+						fmt.Fprintf(os.Stderr, "tools: %s: %v\n", name, err)
+					} else if !managed {
+						fmt.Fprintf(os.Stderr, "tools: installed %s %s\n", name, tag)
+					}
+				}
+			}
+		}
+		t.Reset(24 * time.Hour)
+	}
+}
+
+func toolsCmd() *cobra.Command {
+	c := &cobra.Command{Use: "tools", Short: "Install, update or roll back managed helper tools (yt-dlp, rclone, deno)"}
+	for _, a := range []string{"install", "rollback"} {
+		c.AddCommand(&cobra.Command{Use: a + " <name>", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+			var out map[string]string
+			if err := call("POST", "/v1/tools/"+url.PathEscape(args[0])+"/"+a, nil, &out); err != nil {
+				return err
+			}
+			return show(out, func() { fmt.Printf("%s %s\n", args[0], out["version"]) })
+		}})
 	}
 	return c
 }

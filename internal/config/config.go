@@ -46,6 +46,9 @@ type Config struct {
 		Extract       bool  `koanf:"extract"`       // unpack archives after download by default
 		DeleteArchive bool  `koanf:"deletearchive"` // and delete the archive afterwards
 	} `koanf:"jobs"`
+	Updates struct {
+		Tools string `koanf:"tools"` // auto (default): install missing helpers and update them daily; off
+	} `koanf:"updates"`
 	Limits struct {
 		Down int64 `koanf:"down"` // bytes/s, 0 = unlimited
 		Up   int64 `koanf:"up"`
@@ -91,6 +94,7 @@ func defaults() map[string]any {
 		"server.listen":     "127.0.0.1:8080",
 		"server.tls":        "auto",
 		"server.httplisten": ":80",
+		"updates.tools":     "auto",
 		"paths.data":        filepath.Join(home, ".local", "share", "dmn"),
 		"paths.downloads":   filepath.Join(home, "Downloads", "dmn"),
 	}

@@ -11,8 +11,9 @@ type Tool struct {
 	Name     string `json:"name"`
 	Found    bool   `json:"found"`
 	Path     string `json:"path,omitempty"`
-	Features string `json:"features"` // what switches off without it
-	Managed  bool   `json:"managed"`  // the server downloads and updates it itself (M3)
+	Features string `json:"features"`          // what switches off without it
+	Version  string `json:"version,omitempty"` // managed copies: release tag
+	Managed  bool   `json:"managed"`           // the server downloads and updates it itself (M3)
 }
 
 var known = []Tool{
@@ -36,6 +37,9 @@ func Doctor(dataDir string) []Tool {
 	out := make([]Tool, len(known))
 	for i, t := range known {
 		t.Path, t.Found = Find(t.Name, dataDir)
+		if t.Managed {
+			t.Version = Installer{DataDir: dataDir}.Installed(t.Name)
+		}
 		if !t.Found {
 			t.Path = ""
 		}
