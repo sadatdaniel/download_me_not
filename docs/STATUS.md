@@ -77,3 +77,4 @@
 - 2026-10-10: Legal-testing rule added (AGENTS.md rule 7). Engine spike: 20 offline checks, anacrolix kept; gaps: v2-only torrents, LSD.
 - 2026-10-10: Step 2 scaffold: all internal packages, CLI, API, CI, GoReleaser, Docker. Engine fixes: IPv4/IPv6 pinning on bind, Done() signal. libtorrent rejected (cgo).
 - 2026-10-11: M3.3-M3.6 built (Drive, HTTPS/ACME, tools, self-update, installer, web UI). Disk-full incident; resumed after cleanup. Releasing v0.1.0.
+- 2026-10-11: v0.1.1-v0.1.3 released (signed; update-e2e and Docker image on GHCR in the release workflow). README + docs/deploy.md. Pebble ACME test passes. Owner is trying a first real install on an Oracle Cloud ARM (arm64) VM with install.sh --from; Oracle needs both the VCN security list and the instance iptables opened (see docs/deploy.md). M4 paused.

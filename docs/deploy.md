@@ -83,6 +83,9 @@ that token). `dmn pair --name phone` makes a device token and shows the QR code 
 | 443, 80 | TCP | Web panel and API, certificate challenges (`domain`) |
 | 42069 | TCP and UDP | Torrent peers (optional but much faster when open) |
 
+**Oracle Cloud**: open the ports in the VCN security list (console) *and* on the instance, whose Ubuntu image rejects inbound traffic by default:
+`sudo iptables -I INPUT -p tcp --dport 8080 -j ACCEPT; sudo iptables -I INPUT -p tcp --dport 42069 -j ACCEPT; sudo iptables -I INPUT -p udp --dport 42069 -j ACCEPT; sudo netfilter-persistent save`.
+
 Examples: `sudo ufw allow 8080/tcp && sudo ufw allow 42069` or
 `sudo firewall-cmd --permanent --add-port=8080/tcp --add-port=42069/tcp --add-port=42069/udp && sudo firewall-cmd --reload`.
 
