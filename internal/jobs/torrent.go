@@ -166,10 +166,7 @@ func (m *Manager) SetFilePriority(id string, index int, prio string) error {
 // folder) and returns archives to delete later plus a note for the job's error field. Failures here
 // never fail the download itself.
 func (m *Manager) postProcess(ctx context.Context, r *runner, id string, override *Post, paths []string) (archives []string) {
-	p := m.o.Post
-	if override != nil {
-		p = *override
-	}
+	p := m.post(override)
 	if !p.Extract {
 		return nil
 	}

@@ -26,6 +26,7 @@ import (
 
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/engine"
+	"github.com/sadatdaniel/download_me_not/internal/rclone"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/video"
 )
@@ -532,5 +533,53 @@ func TestCookiesSentOverHTTPS(t *testing.T) {
 	j = waitState(t, m, j.ID, "done", 10*time.Second)
 	if strings.Contains(string(j.Meta), "s3") {
 		t.Fatal("cookie value stored in the job database")
+	}
+}
+
+// Drive copy through the post-completion pipeline, with rclone's local backend standing in for
+// Google Drive (same code path, no account): download, then upload, then delete local (move).
+func TestDriveCopyPipeline(t *testing.T) {
+	bin, err := exec.LookPath("rclone")
+	if err != nil {
+		t.Skip("rclone not installed (use the dev container)")
+	}
+	data := payload(300<<10, 9)
+	url := fileServer(t, data, 0, nil)
+	dir, cloud := t.TempDir(), t.TempDir()
+	db, _ := store.Open(filepath.Join(dir, "j.db"))
+	defer db.Close()
+	m := New(Options{DB: db, Downloads: dir, Client: http.DefaultClient, Tick: 20 * time.Millisecond,
+		Destination: func(name string) (*Dest, error) {
+			return &Dest{Runner: rclone.Runner{Bin: bin}, Remote: rclone.Remote{Name: "gd", Params: map[string]string{"type": "local"}}, Folder: cloud + "/dmn"}, nil
+		}})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- m.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	j, _, _ := m.Add(AddRequest{Source: url + "/report.pdf", Post: &Post{Drive: true, DeleteLocal: true}})
+	waitState(t, m, j.ID, "done", 10*time.Second)
+	var cp store.Job
+	deadline := time.Now().Add(15 * time.Second)
+	for cp.ID == "" {
+		jobs, _ := store.ListJobs(db)
+		for _, x := range jobs {
+			if x.Kind == "copy" {
+				cp = x
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no copy job queued")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	waitState(t, m, cp.ID, "done", 15*time.Second)
+	if b, _ := os.ReadFile(filepath.Join(cloud, "dmn", "report.pdf")); !bytes.Equal(b, data) {
+		t.Fatal("not uploaded")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "report.pdf")); !os.IsNotExist(err) {
+		t.Fatal("local copy kept although DeleteLocal was set")
+	}
+	if _, err := m.AddCopy(CopyRequest{Path: "../etc/passwd"}); err == nil {
+		t.Fatal("copy outside the download folder accepted")
 	}
 }

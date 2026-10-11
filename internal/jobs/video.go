@@ -30,7 +30,7 @@ func (m *Manager) runVideo(ctx context.Context, r *runner, j store.Job) error {
 	var meta videoMeta
 	json.Unmarshal(j.Meta, &meta)
 	r.mu.Lock()
-	r.video = true
+	r.ext = true
 	r.mu.Unlock()
 	store.SetJob(m.o.DB, j.ID, map[string]any{"state": "downloading"})
 	var last time.Time
@@ -50,7 +50,11 @@ func (m *Manager) runVideo(ctx context.Context, r *runner, j store.Job) error {
 	r.mu.Lock()
 	done := r.vdone
 	r.mu.Unlock()
-	return store.SetJob(m.o.DB, j.ID, map[string]any{"name": filepath.Base(file), "path": rel, "done": done, "total": done})
+	if err := store.SetJob(m.o.DB, j.ID, map[string]any{"name": filepath.Base(file), "path": rel, "done": done, "total": done}); err != nil {
+		return err
+	}
+	m.queueDriveCopy(r, m.post(nil), rel)
+	return nil
 }
 
 // ProbeResult tells the app what a URL is before it adds the download (the two-step flow, §5.2).

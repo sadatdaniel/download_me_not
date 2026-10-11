@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** M3.3 Google Drive: device-flow sign-in (fake OAuth server in tests), rclone runner (tested with a local remote), copy jobs, post-completion Drive copy. Then M3.4b, M3.5, M3.6.
+**Next action:** M3.4b ACME (CertMagic), then M3.5 install/update, then M3.6 web UI.
 **Blockers:** none.
 
 ## Checklist
@@ -56,7 +56,7 @@
 - [ ] M3 integrations: yt-dlp, rclone and Drive (device flow, `drive.file`), CertMagic, install.sh, self-update, `pair`
   - [x] M3.1 video provider (managed install and self-update of yt-dlp moved to M3.5): probe (`-J`) to formats and presets, download as a job with progress, all traffic through the netguard proxy, `formats` CLI. Tests: yt-dlp's generic extractor on a local page with our own ffmpeg-made video. **Never YouTube from the dev machine**
   - [x] M3.2 cookies: import a Netscape cookie file per domain, AES-GCM at rest (key file 0600 in the config dir), passed to yt-dlp and httpdl, never logged or returned
-  - [ ] M3.3 Google Drive: rclone as a managed tool; OAuth device flow with the drive.file scope (needs the user's own Google Cloud client ID); copy-to-drive jobs; verify; optional delete-local
+  - [x] M3.3 Google Drive: device-flow Connect (API /v1/providers/gdrive/signin, CLI providers config gdrive --signin), encrypted settings (secret.key), copy jobs /v1/copy and CLI copy, post-completion Drive copy with optional delete-local. Tested with a fake Google server and rclone's local backend. **Still to verify with a real Google client ID** (owner creates it later)
   - [x] M3.4 HTTPS: server.tls auto|off|self-signed, fingerprint pinning (app and CLI --fingerprint), live token reload, `pair` QR (URL, new device token, fingerprint)
   - [ ] M3.4b ACME: CertMagic for domains (HTTP-01/TLS-ALPN, DNS-01 via libdns cloudflare/duckdns), Pebble for local tests, `doctor` port and expiry checks
   - [ ] M3.5 install.sh, systemd unit, uninstall; self-update (go-selfupdate, ECDSA, confirm-after-boot); managed tool updates; public releases repo

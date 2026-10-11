@@ -26,3 +26,31 @@ func TestRegistry(t *testing.T) {
 		t.Fatal("unknown provider accepted")
 	}
 }
+
+func TestSettings(t *testing.T) {
+	r := NewRegistry(map[string]Settings{"gdrive": {Settings: map[string]any{"clientSecret": "enc:v1:xxx"}}}, t.TempDir())
+	v, err := r.View("gdrive")
+	if err != nil || v["clientSecret"] != true || v["token"] != false || v["folder"] != "dmn" {
+		t.Fatalf("view %v %v", v, err)
+	}
+	for _, c := range []struct {
+		key string
+		v   any
+		ok  bool
+	}{
+		{"clientSecret", "s", true}, {"folder", 3.0, false}, {"token", "x", false}, {"nope", "x", false},
+	} {
+		if _, err := r.Check("gdrive", c.key, c.v); (err == nil) != c.ok {
+			t.Errorf("%s=%v: %v", c.key, c.v, err)
+		}
+	}
+	if _, err := r.Check("torrent", "encryption", "maybe"); err == nil {
+		t.Error("enum not enforced")
+	}
+	if _, err := r.Check("torrent", "maxPeers", 900.0); err == nil {
+		t.Error("maximum not enforced")
+	}
+	if !r.Restart("torrent", "port") || r.Restart("gdrive", "folder") {
+		t.Error("restart flags")
+	}
+}

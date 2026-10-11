@@ -38,10 +38,13 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
+	"github.com/sadatdaniel/download_me_not/internal/gdrive"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/limits"
 	"github.com/sadatdaniel/download_me_not/internal/netguard"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
+	"github.com/sadatdaniel/download_me_not/internal/rclone"
+	"github.com/sadatdaniel/download_me_not/internal/secret"
 	"github.com/sadatdaniel/download_me_not/internal/selftest"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tlsutil"
@@ -70,7 +73,7 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd())
 	for name, ms := range map[string]string{
 		"copy":   "M3",
 		"update": "M3", "uninstall": "M3",
@@ -154,7 +157,12 @@ func serveCmd() *cobra.Command {
 		// The torrent engine starts with the first torrent job, so a server that only does web
 		// downloads never opens a torrent port or joins the DHT.
 		// The cookie key sits next to the config file, apart from the data folder (scope §5.6).
-		ck, err := cookies.Open(filepath.Join(cfg.Paths.Data, "cookies"), filepath.Join(filepath.Dir(cfgPath), "cookie.key"))
+		keyPath := filepath.Join(filepath.Dir(cfgPath), "secret.key")
+		box, err := secret.Open(keyPath)
+		if err != nil {
+			return fmt.Errorf("secrets: %w", err)
+		}
+		ck, err := cookies.Open(filepath.Join(cfg.Paths.Data, "cookies"), keyPath)
 		if err != nil {
 			return fmt.Errorf("cookies: %w", err)
 		}
@@ -174,10 +182,11 @@ func serveCmd() *cobra.Command {
 			TorrentGate: killSwitch(settingStr(cfg, "torrent", "bind", "")),
 			Video:       videoRunner(ctx, cfg.Paths.Data),
 			Cookies:     ck,
+			Destination: destinations(cfg, reg, box),
 		})
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
-		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck})
+		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box})
 		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()
@@ -950,9 +959,7 @@ func providersCmd() *cobra.Command {
 			return call("PUT", "/v1/providers/"+url.PathEscape(a[0])+"/enabled", map[string]bool{"enabled": on}, nil)
 		}}
 	}
-	cfgC := &cobra.Command{Use: "config <name>", Short: "(not implemented yet: M3)", RunE: func(*cobra.Command, []string) error {
-		return fmt.Errorf("providers config is not implemented yet (milestone M3)")
-	}}
+	cfgC := providerConfigCmd()
 	c.AddCommand(list, toggle("enable", true), toggle("disable", false), cfgC)
 	return c
 }
@@ -1260,6 +1267,139 @@ func httpClient(timeout time.Duration) *http.Client {
 				}
 				return nil
 			}}}
+	}
+	return c
+}
+
+// destinations builds cloud destinations from the provider settings at the time of each copy, so
+// signing in or changing the folder needs no restart.
+func destinations(cfg *config.Config, reg *provider.Registry, box *secret.Box) func(string) (*jobs.Dest, error) {
+	return func(name string) (*jobs.Dest, error) {
+		if name != "gdrive" {
+			return nil, fmt.Errorf("unknown destination %q", name)
+		}
+		bin, ok := tools.Find("rclone", cfg.Paths.Data)
+		if !ok {
+			return nil, fmt.Errorf("rclone is not installed: run `dmn doctor`")
+		}
+		str := func(k string) string { s, _ := reg.Setting("gdrive", k).(string); return s }
+		sec, err := box.Open("gdrive.clientSecret", str("clientSecret"))
+		if err != nil {
+			return nil, err
+		}
+		tok, err := box.Open("gdrive.token", str("token"))
+		if err != nil {
+			return nil, err
+		}
+		if tok == "" {
+			return nil, fmt.Errorf("Google Drive is not connected: use Connect Google Drive (or `dmn providers config gdrive --signin`)")
+		}
+		folder := str("folder")
+		if folder == "" {
+			folder = "dmn"
+		}
+		return &jobs.Dest{
+			Runner: rclone.Runner{Bin: bin},
+			Remote: rclone.Remote{Name: "gdrive", Params: gdrive.Remote(gdrive.Client{ID: str("clientId"), Secret: sec}, tok, "")},
+			Folder: folder,
+			SaveToken: func(t string) error {
+				v := box.Seal("gdrive.token", t)
+				reg.SetSetting("gdrive", "token", v)
+				return config.Set(cfgPath, "providers.gdrive.settings.token", v)
+			},
+		}, nil
+	}
+}
+
+func copyCmd() *cobra.Command {
+	c := &cobra.Command{Use: "copy <job id | /path>", Short: "Copy a finished download to Google Drive", Args: cobra.ExactArgs(1)}
+	c.Flags().Bool("drive", true, "copy to Google Drive (the only destination for now)")
+	move := c.Flags().Bool("move", false, "delete the local copy after the upload is verified")
+	folder := c.Flags().String("folder", "", "Drive folder (default from the gdrive settings)")
+	c.RunE = func(_ *cobra.Command, a []string) error {
+		p := a[0]
+		if !strings.HasPrefix(p, "/") { // a job id: copy what it downloaded
+			var j store.Job
+			if err := call("GET", "/v1/jobs/"+url.PathEscape(p), nil, &j); err != nil {
+				return err
+			}
+			if j.Path == "" || j.State != "done" {
+				return fmt.Errorf("job %s has no finished file yet (state %s)", p, j.State)
+			}
+			p = j.Path
+		}
+		var j store.Job
+		if err := call("POST", "/v1/copy", jobs.CopyRequest{Path: p, Dest: "gdrive", Move: *move, Folder: *folder}, &j); err != nil {
+			return err
+		}
+		return show(j, func() { fmt.Printf("%s  copy  %s\n", j.ID, j.Path) })
+	}
+	return c
+}
+
+func providerConfigCmd() *cobra.Command {
+	c := &cobra.Command{Use: "config <name>", Short: "Show or change a provider's settings; --signin connects Google Drive", Args: cobra.ExactArgs(1)}
+	set := c.Flags().StringArray("set", nil, "key=value (repeatable); numbers and true/false are converted")
+	signin := c.Flags().Bool("signin", false, "gdrive: connect your Google account (device code)")
+	c.RunE = func(_ *cobra.Command, a []string) error {
+		base := "/v1/providers/" + url.PathEscape(a[0])
+		if len(*set) > 0 {
+			body := map[string]any{}
+			for _, kv := range *set {
+				k, v, ok := strings.Cut(kv, "=")
+				if !ok {
+					return fmt.Errorf("--set %q: want key=value", kv)
+				}
+				var val any = v
+				if b, err := strconv.ParseBool(v); err == nil {
+					val = b
+				} else if f, err := strconv.ParseFloat(v, 64); err == nil && k != "clientId" && k != "clientSecret" {
+					val = f
+				}
+				body[k] = val
+			}
+			if err := call("PUT", base+"/settings", body, nil); err != nil {
+				return err
+			}
+		}
+		if *signin {
+			var si struct {
+				UserCode        string
+				VerificationURL string
+			}
+			if err := call("POST", base+"/signin", nil, &si); err != nil {
+				return err
+			}
+			fmt.Printf("Open %s on any device and enter the code:\n\n    %s\n\nWaiting for approval...\n", si.VerificationURL, si.UserCode)
+			for {
+				time.Sleep(3 * time.Second)
+				var st struct{ State, Error string }
+				if err := call("GET", base+"/signin", nil, &st); err != nil {
+					return err
+				}
+				if st.State == "done" {
+					fmt.Println("Google Drive connected.")
+					break
+				}
+				if st.State == "error" {
+					return fmt.Errorf("sign-in failed: %s", st.Error)
+				}
+			}
+		}
+		var out struct{ Values map[string]any }
+		if err := call("GET", base+"/settings", nil, &out); err != nil {
+			return err
+		}
+		return show(out.Values, func() {
+			keys := make([]string, 0, len(out.Values))
+			for k := range out.Values {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				fmt.Printf("%s = %v\n", k, out.Values[k])
+			}
+		})
 	}
 	return c
 }

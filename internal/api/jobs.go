@@ -63,6 +63,20 @@ func (s *server) jobRoutes(api huma.API) {
 			}
 			return body(res), nil
 		})
+	huma.Register(api, op("copy", "POST", "/v1/copy", "write", "Copy (or move) a finished file or folder to a cloud destination such as Google Drive"),
+		func(ctx context.Context, in *struct{ Body jobs.CopyRequest }) (*struct {
+			Status int
+			Body   store.Job
+		}, error) {
+			j, err := s.Jobs.AddCopy(in.Body)
+			if err != nil {
+				return nil, jobErr(err)
+			}
+			return &struct {
+				Status int
+				Body   store.Job
+			}{http.StatusCreated, j}, nil
+		})
 	huma.Register(api, op("get-job", "GET", "/v1/jobs/{id}", "read", "One download"),
 		func(ctx context.Context, in *idIn) (*struct{ Body store.Job }, error) {
 			j, err := s.Jobs.Get(in.ID)

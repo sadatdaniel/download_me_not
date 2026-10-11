@@ -21,6 +21,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/danielgtaylor/huma/v2/sse"
+	"golang.org/x/oauth2"
 
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
@@ -28,20 +29,23 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/limits"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
+	"github.com/sadatdaniel/download_me_not/internal/secret"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
 )
 
 type Deps struct {
-	Version   string
-	Cfg       *config.Config
-	CfgPath   string
-	DB        *sql.DB
-	FS        *fsapi.FS
-	Providers *provider.Registry
-	Jobs      *jobs.Manager
-	Limits    *limits.Limits
-	Cookies   *cookies.Store
+	Version        string
+	Cfg            *config.Config
+	CfgPath        string
+	DB             *sql.DB
+	FS             *fsapi.FS
+	Providers      *provider.Registry
+	Jobs           *jobs.Manager
+	Limits         *limits.Limits
+	Cookies        *cookies.Store
+	Secret         *secret.Box
+	GoogleEndpoint *oauth2.Endpoint // tests point Drive sign-in at a fake server; nil = Google
 }
 
 var rank = map[string]int{"read": 1, "write": 2, "admin": 3}
@@ -57,6 +61,7 @@ type server struct {
 	mu       sync.Mutex
 	tokens   map[string]string // token hash → scope
 	cfgMtime time.Time
+	signin   signIns
 	checked  time.Time
 }
 
@@ -170,6 +175,7 @@ func (s *server) routes(api huma.API) {
 		})
 	s.jobRoutes(api)
 	s.cookieRoutes(api)
+	s.providerRoutes(api)
 
 	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
 		map[string]any{"progress": []jobs.Progress{}},

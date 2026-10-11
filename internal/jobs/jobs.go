@@ -55,6 +55,8 @@ type Options struct {
 	// installed while the server runs is picked up.
 	Video   func() *video.Runner
 	Cookies *cookies.Store // imported browser cookies, attached to https requests; nil = none
+	// Destination returns how to reach a cloud destination (gdrive, ...) for copy jobs.
+	Destination func(name string) (*Dest, error)
 }
 
 var (
@@ -84,7 +86,7 @@ type runner struct {
 	reason  string // why the manager stopped it (e.g. disk full), shown as the job error
 	vdone   int64  // video jobs: progress reported by yt-dlp
 	vtotal  int64
-	video   bool
+	ext     bool // progress comes from an external tool (yt-dlp, rclone)
 }
 
 type sample struct {
@@ -94,6 +96,8 @@ type sample struct {
 
 // Post lists what happens after a download completes (scope §5.9 pipeline). Drive copy comes in M3.
 type Post struct {
+	Drive         bool `json:"drive,omitempty"`         // copy the result to Google Drive
+	DeleteLocal   bool `json:"deleteLocal,omitempty"`   // with Drive: delete the local copy after the upload is verified
 	Extract       bool `json:"extract,omitempty"`       // unpack archives into a folder next to them
 	DeleteArchive bool `json:"deleteArchive,omitempty"` // remove the archive after a successful unpack
 }
@@ -464,6 +468,8 @@ func (m *Manager) start(parent context.Context, j store.Job) {
 			err = m.runTorrent(ctx, r, j)
 		case "video":
 			err = m.runVideo(ctx, r, j)
+		case "copy":
+			err = m.runCopy(ctx, r, j)
 		default:
 			err = m.runWeb(ctx, r, j)
 		}
@@ -584,6 +590,7 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 		return err
 	}
 	m.removeFiles(m.postProcess(ctx, r, j.ID, meta.Post, []string{final}))
+	m.queueDriveCopy(r, m.post(meta.Post), final)
 	return nil
 }
 
@@ -705,7 +712,8 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 			del := m.postProcess(ctx, r, j.ID, meta.Post, paths)
 			err := m.seed(ctx, r, j.ID, t, total, meta.Seed)
 			if err == nil {
-				m.removeFiles(del) // only after seeding: peers may still need the archive
+				m.removeFiles(del)                               // only after seeding: peers may still need the archive
+				m.queueDriveCopy(r, m.post(meta.Post), t.Name()) // also after seeding: a move must not pull files from under peers
 			}
 			return err
 		case <-ctx.Done():
@@ -780,7 +788,7 @@ func (m *Manager) Progress() []Progress {
 		p := Progress{ID: id, Total: -1}
 		r.mu.Lock()
 		switch {
-		case r.video:
+		case r.ext:
 			p.Done, p.Total = r.vdone, r.vtotal
 		case r.dl != nil:
 			p.Done, p.Total = r.dl.Completed(), r.dl.State().Size

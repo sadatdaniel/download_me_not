@@ -11,12 +11,15 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
 	"github.com/sadatdaniel/download_me_not/internal/jobs"
 	"github.com/sadatdaniel/download_me_not/internal/limits"
 	"github.com/sadatdaniel/download_me_not/internal/provider"
+	"github.com/sadatdaniel/download_me_not/internal/secret"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 )
 
@@ -41,8 +44,9 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	cfgPath := filepath.Join(dir, "config.yaml")
 	reg := provider.NewRegistry(nil, dir)
 	ck, _ := cookies.Open(filepath.Join(dir, "cookies"), filepath.Join(dir, "cookie.key"))
+	box, _ := secret.Open(filepath.Join(dir, "secret.key"))
 	jm := jobs.New(jobs.Options{DB: db, Downloads: dl, Client: http.DefaultClient, Allowed: reg.Enabled})
-	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm, Limits: limits.New(0, 0), Cookies: ck})
+	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm, Limits: limits.New(0, 0), Cookies: ck, Secret: box, GoogleEndpoint: testGoogle})
 	srv := httptest.NewServer(h)
 	t.Cleanup(func() { srv.Close(); db.Close(); f.Close() })
 	return srv, cfgPath
@@ -196,5 +200,58 @@ func TestTokenAddedWhileRunning(t *testing.T) {
 	config.Set(cfgPath, "auth.tokens", []map[string]any{{"name": "phone", "hash": HashToken("new-tok"), "scope": "read"}})
 	if code, _ := call(t, srv, "GET", "/v1/jobs", "new-tok", ""); code != 200 {
 		t.Fatalf("token added by pair not picked up: %d", code)
+	}
+}
+
+// testGoogle points Drive sign-in at a fake OAuth server (set by TestDriveConnect).
+var testGoogle *oauth2.Endpoint
+
+func TestDriveConnect(t *testing.T) {
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/device":
+			w.Write([]byte(`{"device_code":"d","user_code":"WXYZ-1234","verification_url":"https://www.google.com/device","expires_in":60,"interval":1}`))
+		case r.Form.Get("client_secret") == "the-secret":
+			w.Write([]byte(`{"access_token":"at","refresh_token":"rt","token_type":"Bearer","expires_in":3600}`))
+		default:
+			w.WriteHeader(400)
+			w.Write([]byte(`{"error":"invalid_client"}`))
+		}
+	}))
+	defer fake.Close()
+	testGoogle = &oauth2.Endpoint{DeviceAuthURL: fake.URL + "/device", TokenURL: fake.URL + "/token", AuthStyle: oauth2.AuthStyleInParams}
+	defer func() { testGoogle = nil }()
+	srv, cfgPath := newTestServer(t)
+
+	if code, b := call(t, srv, "PUT", "/v1/providers/gdrive/settings", "admin-tok", `{"clientId":"cid","clientSecret":"the-secret"}`); code != 200 || strings.Contains(b, "the-secret") {
+		t.Fatalf("set: %d %s", code, b)
+	}
+	if code, _ := call(t, srv, "PUT", "/v1/providers/gdrive/settings", "admin-tok", `{"token":"forged"}`); code != 422 {
+		t.Fatal("token settable by hand")
+	}
+	raw, _ := os.ReadFile(cfgPath)
+	if strings.Contains(string(raw), "the-secret") || !strings.Contains(string(raw), "enc:v1:") {
+		t.Fatalf("secret not encrypted in config:\n%s", raw)
+	}
+	code, b := call(t, srv, "POST", "/v1/providers/gdrive/signin", "admin-tok", "")
+	if code != 202 || !strings.Contains(b, "WXYZ-1234") {
+		t.Fatalf("signin: %d %s", code, b)
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		_, st := call(t, srv, "GET", "/v1/providers/gdrive/signin", "admin-tok", "")
+		if strings.Contains(st, `"done"`) {
+			break
+		}
+		if time.Now().After(deadline) || strings.Contains(st, `"error"`) {
+			t.Fatalf("sign-in: %s", st)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	_, v := call(t, srv, "GET", "/v1/providers/gdrive/settings", "admin-tok", "")
+	if !strings.Contains(v, `"token":true`) || strings.Contains(v, "rt") {
+		t.Fatalf("settings after sign-in: %s", v)
 	}
 }

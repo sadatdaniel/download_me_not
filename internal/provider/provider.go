@@ -5,6 +5,7 @@ package provider
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -87,8 +88,10 @@ var builtins = []def{
 		Schema: obj(map[string]any{})}, defaultOn: true},
 	{Info: Info{Name: "gdrive", Kind: Destination, Description: "Google Drive through rclone", Tools: []string{"rclone"},
 		Schema: obj(map[string]any{
-			"folder": map[string]any{"type": "string", "default": "dmn", "title": "Drive folder"},
-			"token":  map[string]any{"type": "string", "writeOnly": true, "title": "OAuth token (set by sign-in)"},
+			"clientId":     map[string]any{"type": "string", "title": "Google OAuth client ID (type: TVs and Limited Input devices)"},
+			"clientSecret": map[string]any{"type": "string", "writeOnly": true, "title": "Google OAuth client secret"},
+			"folder":       map[string]any{"type": "string", "default": "dmn", "title": "Drive folder for copies"},
+			"token":        map[string]any{"type": "string", "writeOnly": true, "readOnly": true, "title": "Set by Connect Google Drive"},
 		})},
 		signin: func(s map[string]any) bool { v, _ := s["token"].(string); return v == "" }},
 }
@@ -173,4 +176,104 @@ func (r *Registry) Enabled(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.enabled[name]
+}
+
+func (r *Registry) def(name string) (def, bool) {
+	for _, d := range builtins {
+		if d.Name == name {
+			return d, true
+		}
+	}
+	return def{}, false
+}
+
+// Setting returns a raw stored value (secrets stay sealed; the caller decrypts).
+func (r *Registry) Setting(name, key string) any {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.settings[name][key]
+}
+
+// View returns a provider's settings for display: secrets show only whether they are set.
+func (r *Registry) View(name string) (map[string]any, error) {
+	d, ok := r.def(name)
+	if !ok {
+		return nil, fmt.Errorf("unknown provider %q", name)
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := map[string]any{}
+	props, _ := d.Schema["properties"].(map[string]any)
+	for k, p := range props {
+		v, set := r.settings[name][k]
+		if pm, _ := p.(map[string]any); pm["writeOnly"] == true {
+			out[k] = set && v != ""
+			continue
+		}
+		if !set {
+			v = props[k].(map[string]any)["default"]
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// Check validates one setting against the schema and reports whether it is a secret.
+func (r *Registry) Check(name, key string, v any) (secret bool, err error) {
+	d, ok := r.def(name)
+	if !ok {
+		return false, fmt.Errorf("unknown provider %q", name)
+	}
+	props, _ := d.Schema["properties"].(map[string]any)
+	p, ok := props[key].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("%s has no setting %q", name, key)
+	}
+	if p["readOnly"] == true {
+		return false, fmt.Errorf("%s.%s is set by the server", name, key)
+	}
+	switch p["type"] {
+	case "string":
+		s, ok := v.(string)
+		if !ok {
+			return false, fmt.Errorf("%s.%s must be a string", name, key)
+		}
+		if enum, ok := p["enum"].([]string); ok && !slices.Contains(enum, s) {
+			return false, fmt.Errorf("%s.%s must be one of %v", name, key, enum)
+		}
+	case "boolean":
+		if _, ok := v.(bool); !ok {
+			return false, fmt.Errorf("%s.%s must be true or false", name, key)
+		}
+	case "integer", "number":
+		f, ok := v.(float64) // JSON numbers
+		if !ok {
+			return false, fmt.Errorf("%s.%s must be a number", name, key)
+		}
+		if min, ok := p["minimum"].(int); ok && f < float64(min) {
+			return false, fmt.Errorf("%s.%s must be at least %d", name, key, min)
+		}
+		if max, ok := p["maximum"].(int); ok && f > float64(max) {
+			return false, fmt.Errorf("%s.%s must be at most %d", name, key, max)
+		}
+	}
+	return p["writeOnly"] == true, nil
+}
+
+// SetSetting stores a (validated, sealed if secret) value in memory; the caller persists it.
+func (r *Registry) SetSetting(name, key string, v any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.settings[name] == nil {
+		r.settings[name] = map[string]any{}
+	}
+	r.settings[name][key] = v
+}
+
+// Restart reports whether a setting only applies after a server restart.
+func (r *Registry) Restart(name, key string) bool {
+	d, _ := r.def(name)
+	props, _ := d.Schema["properties"].(map[string]any)
+	p, _ := props[key].(map[string]any)
+	return p["x-restart"] == true
 }
