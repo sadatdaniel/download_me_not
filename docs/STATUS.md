@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1, M2 (minus M2.7) and M3 (minus Pebble test, Docker image, real Google client) are done. Releases v0.1.1 and v0.1.2 are published on the private repo; install.sh verified a real signed release, and the release workflow proves self-update from the previous release on every tag. (v0.1.0 has misnamed archives; ignore it.)
-**Next action:** M4.1 (see the checklist). Docker image is published on GHCR with every release (v0.1.3+).
+**Next action:** Server readiness before any app work: (1) README + docs/deploy.md (VPS, Raspberry Pi, Docker, first run, pairing, firewall, updates); (2) Pebble ACME issuance test in an isolated Docker network; (3) M2.7 multi-container swarm with netem; (4) a full code audit and fixes; (5) the owner deploys on a real server and confirms.
 **Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
@@ -63,7 +63,7 @@
   - [x] M3.5b server self-update: go-selfupdate with an ECDSA-signed checksums.txt (key: CI secret RELEASE_SIGNING_KEY; public key internal/update/release-key.pub; owner keeps an offline backup), confirm-after-boot rollback, daily check (updates.server notify|auto|off), API /v1/update, CLI update check|apply|rollback
   - [x] M3.5c install.sh (signature + checksum verified, service user owns the binary for self-update, hardened systemd unit, config + owner token + pairing QR, re-run = upgrade/repair, --uninstall/--purge never touches downloads), `dmn uninstall` (typed confirmation to delete downloads), install.sh shipped as a release asset, CI installer test in a container. Docker image publishing still to do
   - [x] M3.6 web UI: Downloads (live progress via SSE, pause/resume/mode/remove, player, peers and pieces), Add (probe, video formats, .torrent upload, unpack/Drive options), Files (browse, play, download, ZIP, rename, delete, to Drive), Settings (limits, providers with schema forms, Connect Google Drive, cookies, tools, updates). Verified in the browser pane incl. phone width
-- [ ] M4 Android app: **Flutter** (owner's choice), in `app/`, built with the Flutter SDK on Windows (C:devlutter, 3.47.5; Android SDK installed)
+- [ ] M4 Android app (**paused by the owner until the server is confirmed working and deployable**): **Flutter** (owner's choice), in `app/`, built with the Flutter SDK on Windows (C:devlutter, 3.47.5; Android SDK installed)
   - [ ] M4.1 project, API client on dart:io HttpClient with certificate pinning (fingerprint from pairing), pairing (scan the dmn://pair QR or type URL + token), token in secure storage
   - [ ] M4.2 queue with live progress (SSE), pause/resume/remove, add (URL, magnet, .torrent, video formats, stream mode)
   - [ ] M4.3 share target (links from any app), magnet: and .torrent handlers
