@@ -72,8 +72,11 @@ To use a host folder for downloads, replace the `downloads` volume with e.g.
 4. From another computer, the CLI works too:
    `dmn --url https://<server>:8080 --fingerprint <sha256> --token <token> ls`.
 
-Tokens: `dmn setup --name <name> --scope read|write|admin` makes more (re-using a name replaces
-that token). `dmn pair --name phone` makes a device token and shows the QR code for the app.
+On the server, run `dmn` commands with `sudo` (e.g. `sudo dmn pair --name phone`, `sudo dmn doctor`);
+they use `/etc/dmn/config.yaml` and keep it owned by the service user.
+
+Tokens: `sudo dmn setup --name <name> --scope read|write|admin` makes more (re-using a name replaces
+that token). `sudo dmn pair --name phone` makes a device token and shows the QR code for the app.
 
 ## 4. Ports and firewall
 

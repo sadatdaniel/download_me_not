@@ -93,7 +93,7 @@ func (u Updater) exe() (string, error) {
 // Apply installs the latest release if it is newer. The caller then restarts the process (exit
 // cleanly; systemd or Docker starts the new binary).
 func (u Updater) Apply(ctx context.Context, current string) (string, error) {
-	if _, err := os.Stat("/.dockerenv"); err == nil {
+	if os.Getenv("DMN_IMAGE") != "" { // set by our Docker image; a native install inside another container may update itself
 		return "", errors.New("running in Docker: update by pulling the new image (docker compose pull && docker compose up -d)")
 	}
 	up, err := u.updater()

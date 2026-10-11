@@ -21,7 +21,7 @@ COPY --from=build /dmn /usr/local/bin/dmn
 RUN for t in yt-dlp rclone deno; do dmn tools install --data /opt/dmn-seed "$t" || echo "skip $t on $(uname -m)"; done
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 USER dmn
-ENV DMN_CONFIG=/config/config.yaml DMN_PATHS_DATA=/data DMN_PATHS_DOWNLOADS=/downloads DMN_SERVER_LISTEN=0.0.0.0:8080
+ENV DMN_IMAGE=1 DMN_CONFIG=/config/config.yaml DMN_PATHS_DATA=/data DMN_PATHS_DOWNLOADS=/downloads DMN_SERVER_LISTEN=0.0.0.0:8080
 VOLUME ["/config", "/data", "/downloads"]
 EXPOSE 8080 42069 42069/udp
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["dmn", "health"]

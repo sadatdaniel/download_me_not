@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/confmap"
@@ -81,9 +82,15 @@ var FlagKeys = map[string]string{
 // Secret keys are redacted by `config show`.
 var secret = []string{"auth.", "server.dnstoken", "updates.token"}
 
+// SystemPath is where install.sh puts the config.
+const SystemPath = "/etc/dmn/config.yaml"
+
 func DefaultPath() string {
 	if p := os.Getenv("DMN_CONFIG"); p != "" {
 		return p
+	}
+	if _, err := os.Stat(SystemPath); err == nil { // installed by install.sh: `sudo dmn ...` must act on it
+		return SystemPath
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -167,6 +174,12 @@ func Set(path, key string, value any) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
+	}
+	// Keep the owner: `sudo dmn pair` must not turn the service's config into a root-only file.
+	if fi, err := os.Stat(path); err == nil {
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok && os.Geteuid() == 0 {
+			os.Chown(tmp, int(st.Uid), int(st.Gid))
+		}
 	}
 	return os.Rename(tmp, path)
 }
