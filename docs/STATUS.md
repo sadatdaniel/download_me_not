@@ -1,7 +1,15 @@
 # Status
 
-**Current state:** M1, M2 (minus M2.7) and M3 (minus Pebble test, Docker image, real Google client) are done. Releases v0.1.1 and v0.1.2 are published on the private repo; install.sh verified a real signed release, and the release workflow proves self-update from the previous release on every tag. (v0.1.0 has misnamed archives; ignore it.)
-**Next action:** Install simulation passes on both arches against v0.1.4 (2026-10-11; found and fixed: root CLI not using /etc/dmn, root writes changing config ownership, over-broad Docker detection). Then: M2.7 swarm with netem, a full code audit, and the owner's first real deployment on Oracle Cloud ARM. Repo is PUBLIC since 2026-10-11 (history scrubbed: noreply email, no location). The GHCR image visibility must be switched to public by the owner in the GitHub UI.
+**Current state (2026-10-11, end of the first conversation):** Server side is feature-complete for the MVP except the items under "Open" below. Repo is **public** (history scrubbed: noreply email, no location; no licence file yet). Latest release **v0.1.5** (signed; the release workflow also proves self-update from the previous release and publishes the multi-arch Docker image to GHCR). The owner has **installed it on an Oracle Cloud ARM VM** with the one-liner and reached it through an SSH tunnel; ffmpeg was missing there, fixed in v0.1.5 (install.sh now installs it). `test/sim/run.sh` (Oracle-like VM, native + arm64) passes against v0.1.5. M4 (Flutter app) is **paused by the owner** until the server is confirmed in real use.
+
+**Next action, in order:**
+1. **Pair a device from the web panel** (no SSH after install): admin endpoint `POST /v1/pair {name, scope}` returning the `dmn://pair` payload (URL as the browser sees it, new device token, cert fingerprint), rendered as a QR in Settings (vendor a small MIT QR encoder, no build step). Reuse `addToken`/`pairPayload`/`tlsutil.Fingerprint` from cmd/dmn by moving them into a package.
+2. Help the owner finish the Oracle setup without SSH tunnels: open TCP 8080 in the VCN security list + iptables (docs/deploy.md), or a domain with ACME, or Tailscale (`--access proxy`). Confirm downloads, streaming, video and torrents work for real.
+3. `dmn doctor`: report open/blocked ports and certificate expiry (scope §5.10).
+4. M2.7 multi-container torrent swarm with netem (isolated network); a full code audit (`/ponytail-audit`) and fixes.
+5. Then, when the owner says so: M4 Flutter app (plan in the checklist below).
+
+**Open (known gaps):** real Google OAuth client ID (owner creates it; Drive tested only against a fake Google), GHCR image visibility (owner sets it public in the GitHub UI), FTP (deferred), per-torrent speed limits, licence choice.
 **Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
@@ -80,3 +88,4 @@
 - 2026-10-11: v0.1.1-v0.1.3 released (signed; update-e2e and Docker image on GHCR in the release workflow). README + docs/deploy.md. Pebble ACME test passes. Owner is trying a first real install on an Oracle Cloud ARM (arm64) VM with install.sh --from; Oracle needs both the VCN security list and the instance iptables opened (see docs/deploy.md). M4 paused.
 - 2026-10-11: repo made public (history scrubbed). test/sim realistic install (Oracle-like VM, native + arm64) passes against v0.1.4 after three fixes.
 - 2026-10-11: owner's first Oracle install showed ffmpeg missing; install.sh now installs it (v0.1.5), simulation checks it and passes.
+- 2026-10-11: end of the first conversation. Handoff: STATUS next actions (web-panel pairing first), PROMPT.md refreshed.
