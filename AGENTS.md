@@ -29,7 +29,7 @@ docker compose -f compose.dev.yaml run --rm test go vet ./...
 ```
 
 - Compose project `dmn-dev`, volumes `dmn-gomod` and `dmn-gocache`.
-- Docker resources this project created (the only ones you may remove): volumes `dmn-gomod` and `dmn-gocache`; images `golang:1.26`, `alpine:3.22`, `goreleaser/goreleaser:latest` and `dmn:local`, plus `dmn-dev:latest` (Dockerfile.dev: Go, ffmpeg, aria2c, yt-dlp; rebuild with `docker compose -f compose.dev.yaml build go`). `ubuntu:24.04` existed before; use it but never remove it.
+- Docker resources this project created (the only ones you may remove): volumes `dmn-dev_dmn-gomod` and `dmn-dev_dmn-gocache` (compose adds the project prefix); images `golang:1.26`, `alpine:3.22`, `goreleaser/goreleaser:latest` and `dmn:local`, plus `dmn-dev:latest` (Dockerfile.dev: Go, ffmpeg, aria2c, yt-dlp; rebuild with `docker compose -f compose.dev.yaml build go`). `ubuntu:24.04` existed before; use it but never remove it.
 - Server image: `docker build -t dmn:local .`, then see `compose.yaml`. The API contract is `api/openapi.json`; regenerate it with `UPDATE_OPENAPI=1` (see `internal/api`).
 - Don't call `python` on the host (it's a Store stub that hangs). Use Docker or perl.
 - The host also runs unrelated containers (`a50-*`, `oci-*`, omniroute). **Never touch, prune or delete Docker resources this project didn't create.** No `docker system prune`, no `docker volume prune`.

@@ -16,6 +16,9 @@ archives:
     files: [README*, THIRD_PARTY*]
 checksum:
   name_template: checksums.txt
+release:
+  extra_files:
+    - glob: scripts/install.sh
 changelog:
   use: github
 # checksums.txt is signed with the ECDSA release key (CI secret RELEASE_SIGNING_KEY, written to

@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -78,17 +79,7 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd(), updateCmd())
-	for name, ms := range map[string]string{
-		"copy":      "M3",
-		"uninstall": "M3",
-	} {
-		root.AddCommand(&cobra.Command{Use: name, Short: "(not implemented yet: " + ms + ")",
-			DisableFlagParsing: true,
-			RunE: func(*cobra.Command, []string) error {
-				return fmt.Errorf("%s is not implemented yet (milestone %s)", name, ms)
-			}})
-	}
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd(), updateCmd(), uninstallCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -1569,5 +1560,45 @@ func updateCmd() *cobra.Command {
 		fmt.Println("previous version restored; restart the service (systemctl restart dmn)")
 		return nil
 	}})
+	return c
+}
+
+func uninstallCmd() *cobra.Command {
+	c := &cobra.Command{Use: "uninstall", Short: "Remove the service and binary (keeps config, data and downloads unless told otherwise)"}
+	purge := c.Flags().Bool("purge", false, "also remove config and data")
+	delDL := c.Flags().Bool("delete-downloads", false, "also delete the download folder (asks you to type its path)")
+	c.RunE = func(*cobra.Command, []string) error {
+		if os.Geteuid() != 0 {
+			return errors.New("run as root (sudo dmn uninstall)")
+		}
+		_, cfg, err := config.Load(cfgPath, nil)
+		if err != nil {
+			return err
+		}
+		if *delDL {
+			fmt.Printf("This deletes %s and everything in it.\nType the path to confirm: ", cfg.Paths.Downloads)
+			var typed string
+			fmt.Scanln(&typed)
+			if typed != cfg.Paths.Downloads {
+				return errors.New("not confirmed; nothing removed")
+			}
+		}
+		if _, err := os.Stat("/run/systemd/system"); err == nil {
+			exec.Command("systemctl", "disable", "--now", "dmn").Run()
+			os.Remove("/etc/systemd/system/dmn.service")
+			exec.Command("systemctl", "daemon-reload").Run()
+		}
+		os.Remove("/usr/local/bin/dmn")
+		os.RemoveAll("/opt/dmn")
+		if *purge {
+			os.RemoveAll(filepath.Dir(cfgPath))
+			os.RemoveAll(cfg.Paths.Data)
+		}
+		if *delDL {
+			os.RemoveAll(cfg.Paths.Downloads)
+		}
+		fmt.Println("removed the service and binary" + map[bool]string{true: ", config and data", false: "; config and data kept"}[*purge])
+		return nil
+	}
 	return c
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -92,5 +93,17 @@ func TestOpenSSLSignatureVerifies(t *testing.T) {
 		t.Fatal("embedded key is not PEM")
 	} else if _, err := x509.ParsePKIXPublicKey(b.Bytes); err != nil {
 		t.Fatalf("embedded key: %v", err)
+	}
+}
+
+// install.sh verifies releases with its own copy of the public key; it must match.
+func TestInstallScriptKey(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := strings.TrimSpace(strings.ReplaceAll(string(PublicKey), "\r", ""))
+	if !strings.Contains(string(b), "PUBKEY='"+key+"'") {
+		t.Fatal("scripts/install.sh has a different release key than internal/update/release-key.pub")
 	}
 }
