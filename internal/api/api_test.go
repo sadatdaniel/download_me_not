@@ -77,6 +77,9 @@ func TestAuthAndScopes(t *testing.T) {
 		want                    int
 	}{
 		{"GET", "/v1/health", "", "", 200},
+		{"GET", "/", "", "", 200},
+		{"GET", "/app.js", "", "", 200},
+		{"GET", "/v1/nope", "read-tok", "", 404},
 		{"GET", "/openapi.json", "", "", 200},
 		{"GET", "/v1/jobs", "", "", 401},
 		{"GET", "/v1/jobs", "wrong", "", 401},

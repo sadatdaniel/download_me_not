@@ -32,6 +32,7 @@ docker compose -f compose.dev.yaml run --rm test go vet ./...
 - Docker resources this project created (the only ones you may remove): volumes `dmn-dev_dmn-gomod` and `dmn-dev_dmn-gocache` (compose adds the project prefix); images `golang:1.26`, `alpine:3.22`, `goreleaser/goreleaser:latest` and `dmn:local`, plus `dmn-dev:latest` (Dockerfile.dev: Go, ffmpeg, aria2c, yt-dlp; rebuild with `docker compose -f compose.dev.yaml build go`). `ubuntu:24.04` existed before; use it but never remove it.
 - Server image: `docker build -t dmn:local .`, then see `compose.yaml`. The API contract is `api/openapi.json`; regenerate it with `UPDATE_OPENAPI=1` (see `internal/api`).
 - Don't call `python` on the host (it's a Store stub that hangs). Use Docker or perl.
+- Preview the web UI: `.claude/launch.json` (config `webui-preview`) builds and runs a throwaway server on http://127.0.0.1:18080 with a demo video; the API token is printed by `dmn setup` in the container log. Never add real downloads in a preview (rule 7).
 - The host also runs unrelated containers (`a50-*`, `oci-*`, omniroute). **Never touch, prune or delete Docker resources this project didn't create.** No `docker system prune`, no `docker volume prune`.
 - The host is Windows. Line endings are forced to LF by `.gitattributes`.
 
@@ -50,6 +51,9 @@ internal/engine    torrent Engine interface + anacrolix implementation (spike le
 internal/httpdl    IDM-style downloader: speed-aware work stealing, slow-connection watchdog, resume, If-Range
 internal/jobs      crash-only job manager: DB holds desired state, reconcile loop runs runners (recover per job)
 internal/selftest  offline end-to-end checks behind `dmn doctor --selftest`
+internal/webui     browser control panel (Preact + htm vendored, no build step), served at /, strict CSP
+internal/video, cookies, gdrive, rclone, acme, tlsutil, secret, extract, limits, update: one concern each
+scripts/           install.sh (signed-release installer) and test-install.sh (runs in CI)
 internal/netguard  SSRF-guarded dialer/client + guarded proxy for yt-dlp
 internal/provider  built-in sources/destinations, JSON Schema settings, live toggles
 internal/tools     helper tool detection (doctor)

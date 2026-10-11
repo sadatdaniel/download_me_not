@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1 core done: web and torrent jobs, pause, resume, stream, cancel, crash recovery, ZIP, copy, selftest; downloader benchmarked against aria2c. CI green.
-**Next action:** M3.6 web UI (seedr.cc-style). Before that, optionally cut a first tagged release (v0.1.0) to exercise the release pipeline end to end.
+**Next action:** Cut the first release (v0.1.0) to exercise GoReleaser, signing and self-update end to end on the private repo. Then M4 Android app (decide Kotlin vs Flutter with the user). Open: Pebble ACME test, Docker image publishing, M2.7 swarm, FTP, real Google client ID.
 **Blockers:** none.
 
 ## Checklist
@@ -62,7 +62,7 @@
   - [x] M3.5a managed tools: verified install, update, rollback (API /v1/tools/{name}/install|rollback, CLI tools), daily maintenance installs what enabled providers need
   - [x] M3.5b server self-update: go-selfupdate with an ECDSA-signed checksums.txt (key: CI secret RELEASE_SIGNING_KEY; public key internal/update/release-key.pub; owner keeps an offline backup), confirm-after-boot rollback, daily check (updates.server notify|auto|off), API /v1/update, CLI update check|apply|rollback
   - [x] M3.5c install.sh (signature + checksum verified, service user owns the binary for self-update, hardened systemd unit, config + owner token + pairing QR, re-run = upgrade/repair, --uninstall/--purge never touches downloads), `dmn uninstall` (typed confirmation to delete downloads), install.sh shipped as a release asset, CI installer test in a container. Docker image publishing still to do
-  - [ ] M3.6 web UI (seedr.cc-style): queue with live progress, add (URL, magnet, .torrent, formats), file manager, player, settings rendered from provider JSON Schema, Connect Google Drive; embedded in the binary, same /v1 API
+  - [x] M3.6 web UI: Downloads (live progress via SSE, pause/resume/mode/remove, player, peers and pieces), Add (probe, video formats, .torrent upload, unpack/Drive options), Files (browse, play, download, ZIP, rename, delete, to Drive), Settings (limits, providers with schema forms, Connect Google Drive, cookies, tools, updates). Verified in the browser pane incl. phone width
 - [ ] M4 Android app (Kotlin + Compose + DocumentsProvider proposed)
 - [ ] M5 browser extension (proposed): send downloads with cookies and headers, media sniffer
 

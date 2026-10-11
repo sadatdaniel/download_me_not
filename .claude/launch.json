@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "webui-preview",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": [
+        "run", "--rm", "--name", "dmn-preview", "-p", "127.0.0.1:18080:8080",
+        "-v", "${workspaceFolder}:/src:ro", "-v", "dmn-dev_dmn-gomod:/go/pkg/mod", "-v", "dmn-dev_dmn-gocache:/root/.cache/go-build",
+        "-w", "/src", "dmn-dev:latest", "sh", "-c",
+        "go build -buildvcs=false -o /tmp/dmn ./cmd/dmn && export DMN_CONFIG=/tmp/c/config.yaml HOME=/tmp/h && /tmp/dmn config set server.tls off && /tmp/dmn config set server.listen 0.0.0.0:8080 && /tmp/dmn config set paths.downloads /tmp/dl && /tmp/dmn setup && mkdir -p /tmp/dl/Movies && ffmpeg -loglevel error -f lavfi -i testsrc=duration=5:size=640x360:rate=25 -c:v libx264 /tmp/dl/Movies/test-pattern.mp4 && echo hello > /tmp/dl/notes.txt && exec /tmp/dmn serve"
+      ],
+      "port": 18080
+    }
+  ]
+}

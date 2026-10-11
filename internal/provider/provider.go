@@ -34,6 +34,7 @@ type Info struct {
 	Kind        Kind           `json:"kind"`
 	Description string         `json:"description"`
 	Tools       []string       `json:"tools"`
+	Optional    []string       `json:"optional,omitempty"` // helps but not required (e.g. deno for YouTube)
 	AlwaysOn    bool           `json:"alwaysOn"`
 	Enabled     bool           `json:"enabled"`
 	Status      Status         `json:"status"`
@@ -59,7 +60,7 @@ func obj(props map[string]any) map[string]any {
 }
 
 var builtins = []def{
-	{Info: Info{Name: "web", Kind: Source, Description: "Direct HTTP, HTTPS and FTP links",
+	{Info: Info{Name: "web", Kind: Source, Description: "Direct HTTP and HTTPS links",
 		Schema: obj(map[string]any{
 			"connections": map[string]any{"type": "integer", "minimum": 1, "maximum": 32, "default": 16, "title": "Connections per download"},
 		})}, defaultOn: true},
@@ -82,7 +83,7 @@ var builtins = []def{
 			"seedRatio":     restart(map[string]any{"type": "number", "minimum": 0, "default": 1.0, "title": "Seed ratio (for ratio)"}),
 			"seedMinutes":   restart(map[string]any{"type": "integer", "minimum": 0, "default": 60, "title": "Seed minutes (for time)"}),
 		})}, defaultOn: true},
-	{Info: Info{Name: "video", Kind: Source, Description: "YouTube and other video sites through yt-dlp", Tools: []string{"yt-dlp", "deno", "ffmpeg"},
+	{Info: Info{Name: "video", Kind: Source, Description: "YouTube and other video sites through yt-dlp", Tools: []string{"yt-dlp"}, Optional: []string{"deno", "ffmpeg"},
 		Schema: obj(map[string]any{})}, defaultOn: true},
 	{Info: Info{Name: "local", Kind: Destination, Description: "The download folder on this server", AlwaysOn: true,
 		Schema: obj(map[string]any{})}, defaultOn: true},
@@ -150,8 +151,17 @@ func (r *Registry) status(d def, enabled bool) (Status, string) {
 	if len(missing) > 0 {
 		return MissingTool, strings.Join(missing, ", ") + " not found; run `dmn doctor`"
 	}
+	var soft []string
+	for _, t := range d.Optional {
+		if _, ok := tools.Find(t, r.dataDir); !ok {
+			soft = append(soft, t)
+		}
+	}
 	if d.signin != nil && d.signin(r.settings[d.Name]) {
 		return NeedsSignin, "sign in with `dmn providers config " + d.Name + "`"
+	}
+	if len(soft) > 0 {
+		return Ready, strings.Join(soft, ", ") + " not installed: some sites (YouTube) or formats may not work"
 	}
 	return Ready, ""
 }

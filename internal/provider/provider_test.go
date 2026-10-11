@@ -13,7 +13,7 @@ func TestRegistry(t *testing.T) {
 	if st["web"].Status != Disabled || st["local"].Status != Ready || st["torrent"].Status != Ready {
 		t.Fatalf("statuses: %+v", st)
 	}
-	if st["video"].Status != MissingTool || st["gdrive"].Status != Disabled { // drives are opt-in
+	if st["video"].Status != MissingTool || st["gdrive"].Status != Disabled { // yt-dlp missing; drives are opt-in
 		t.Fatalf("statuses: %v %v", st["video"].Status, st["gdrive"].Status)
 	}
 	if err := r.SetEnabled("local", false); err == nil {

@@ -32,6 +32,7 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/secret"
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
+	"github.com/sadatdaniel/download_me_not/internal/webui"
 )
 
 type Deps struct {
@@ -136,6 +137,14 @@ func New(d Deps) (http.Handler, huma.API) {
 	mux.HandleFunc("GET /v1/raw/{path...}", s.raw)
 	mux.HandleFunc("GET /v1/jobs/{id}/stream", s.stream)
 	mux.HandleFunc("GET /v1/zip/{path...}", s.zip)
+	ui := webui.Handler()
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/") {
+			http.NotFound(w, r)
+			return
+		}
+		ui.ServeHTTP(w, r)
+	})
 	return mux, api
 }
 

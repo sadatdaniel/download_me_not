@@ -1,0 +1,60 @@
+:root {
+  --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #667085; --line: #e4e7ec;
+  --accent: #2563eb; --accent-text: #fff; --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+  --bar: #e4e7ec; --radius: 10px;
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1218; --panel: #171b23; --text: #e6e8ee; --muted: #98a2b3; --line: #2a303b; --bar: #2a303b; --accent: #3b82f6; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+a { color: var(--accent); }
+header { display: flex; align-items: center; gap: 4px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+header .brand { font-weight: 700; margin-right: 12px; }
+header nav { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+header nav a { padding: 6px 12px; border-radius: 8px; text-decoration: none; color: var(--text); }
+header nav a.on { background: var(--accent); color: var(--accent-text); }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--muted); font-size: 13px; }
+.name { font-weight: 600; overflow-wrap: anywhere; }
+.badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--bar); color: var(--muted); }
+.badge.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.badge.failed { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.badge.downloading, .badge.uploading, .badge.seeding { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.bar { height: 6px; background: var(--bar); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.bar > div { height: 100%; background: var(--accent); transition: width .5s; }
+.pieces { display: flex; height: 10px; border-radius: 3px; overflow: hidden; margin: 8px 0; }
+.pieces span { height: 100%; }
+.error { color: var(--bad); font-size: 13px; overflow-wrap: anywhere; }
+.hint { color: var(--warn); font-size: 13px; }
+button, .btn { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; text-decoration: none; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.danger { color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+input, select, textarea { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); width: 100%; }
+input[type=checkbox], input[type=radio] { width: auto; }
+textarea { min-height: 90px; resize: vertical; }
+label { display: block; margin: 8px 0 4px; font-size: 13px; color: var(--muted); }
+label.inline { display: inline-flex; gap: 6px; align-items: center; margin: 0 12px 0 0; color: var(--text); font-size: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 500; }
+td.actions { white-space: nowrap; text-align: right; }
+.entry { cursor: pointer; }
+.crumbs a { cursor: pointer; }
+.toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; z-index: 20; max-width: 90vw; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; }
+.modal .card { max-width: 900px; width: 100%; max-height: 90vh; overflow: auto; }
+video, audio { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; }
+.code { font: 600 28px/1.2 ui-monospace, monospace; letter-spacing: 2px; }
+.login { max-width: 420px; margin: 12vh auto; }
+@media (max-width: 640px) {
+  td.hide-sm, th.hide-sm { display: none; }
+  header .brand { flex: 1; }
+  header nav { order: 3; flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto; }
+  main { padding: 10px; }
+}
