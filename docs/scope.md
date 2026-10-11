@@ -553,6 +553,7 @@ Open-core: open-source the server and CLI, keep the paid Android app closed.
 | Android app in Flutter (owner's choice, 2026-10-11), in this repo under app/ for now; built on Windows with the installed Flutter SDK. Licence split (open server, closed app) can move it to its own repo later | Decided (2026-10-11); replaces the Kotlin proposal |
 | App work (M4) waits until the server is confirmed working in a real deployment | Decided by the owner (2026-10-11) |
 | Testing stays legal and local: no public torrent swarms, trackers or DHT from the dev machine; isolated Docker swarm with self-generated content only (AGENTS.md rule 7) | Decided (2026-10-10) |
+| Pairing from the web panel: admin `POST /v1/pair` returns the dmn://pair payload and the QR as a PNG data URL, rendered server-side with rsc.io/qr (BSD, already in the module graph via qrterminal) instead of vendoring a JS QR encoder. The browser sends its own origin as the server URL. Token helpers moved from cmd/dmn to internal/api (AddToken, PairPayload) | Decided (2026-10-11) |
 | Android: Kotlin + Compose with a DocumentsProvider; notifications through UnifiedPush/ntfy | Proposed, decide at M4 |
 
 ## 18. Build order (handoff to Claude Code)

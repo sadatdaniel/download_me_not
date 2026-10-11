@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/sadatdaniel/download_me_not/internal/api"
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 )
 
@@ -45,7 +46,7 @@ func TestParseSeed(t *testing.T) {
 }
 
 func TestPairPayload(t *testing.T) {
-	p := pairPayload("https://192.168.1.5:8080", "dmn_abc", "ff00")
+	p := api.PairPayload("https://192.168.1.5:8080", "dmn_abc", "ff00")
 	u, err := url.Parse(p)
 	if err != nil || u.Scheme != "dmn" || u.Query().Get("token") != "dmn_abc" || u.Query().Get("fp") != "ff00" ||
 		u.Query().Get("url") != "https://192.168.1.5:8080" {

@@ -80,6 +80,7 @@ they use `/etc/dmn/config.yaml` and keep it owned by the service user.
 
 Tokens: `sudo dmn setup --name <name> --scope read|write|admin` makes more (re-using a name replaces
 that token). `sudo dmn pair --name phone` makes a device token and shows the QR code for the app.
+Without SSH: the web panel's Settings, "Pair a phone" (admin token) does the same in the browser.
 
 ## 4. Ports and firewall
 

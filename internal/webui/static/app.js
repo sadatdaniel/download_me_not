@@ -362,6 +362,31 @@ function DriveConnect({ toast }) {
   </div>`;
 }
 
+// Pair shows the QR the Android app scans: a new device token, this page's address and the certificate fingerprint.
+function Pair({ toast }) {
+  const [f, setF] = useState({ name: 'phone', scope: 'write', url: location.origin });
+  const [out, setOut] = useState(null);
+  const go = async e => {
+    e.preventDefault();
+    try { setOut(await api('POST', '/v1/pair', f)); } catch (x) { toast(x.message); }
+  };
+  return html`<div class="card"><h3>Pair a phone</h3>
+    <p class="muted">Creates a token for one device. Pairing the same name again replaces its old token.</p>
+    <form onSubmit=${go}>
+      <div class="row">
+        <div class="grow"><label>Device name</label><input value=${f.name} onInput=${e => setF({ ...f, name: e.target.value })} /></div>
+        <div><label>Access</label><select value=${f.scope} onChange=${e => setF({ ...f, scope: e.target.value })}>${['read', 'write', 'admin'].map(o => html`<option>${o}</option>`)}</select></div>
+      </div>
+      <label>Server address as the phone sees it</label><input value=${f.url} onInput=${e => setF({ ...f, url: e.target.value })} />
+      <div class="row" style="margin-top:10px"><button class="primary" disabled=${!f.name || !f.url}>Show QR code</button></div>
+    </form>
+    ${out && html`<div style="margin-top:10px">
+      <img src=${out.qr} alt="Pairing QR code" style="max-width:100%;image-rendering:pixelated" />
+      <p class="muted">Scan with the app. The code holds a token and is shown once; close this when done.${out.fingerprint && html` Certificate fingerprint (SHA-256): <code>${out.fingerprint}</code>`}</p>
+      <button onClick=${() => setOut(null)}>Close</button></div>`}
+  </div>`;
+}
+
 function Settings({ toast }) {
   const [providers, setProviders] = useState([]);
   const [open, setOpen] = useState('');
@@ -417,6 +442,7 @@ function Settings({ toast }) {
       <table>${tools.map(t => html`<tr><td class="name">${t.name}</td><td class="muted">${t.found ? (t.version || 'installed') : 'missing'} · ${t.features}</td>
         <td class="actions">${t.managed && html`<button onClick=${() => act(() => api('POST', `/v1/tools/${t.name}/install`), t.name + ' up to date')}>${t.found ? 'Update' : 'Install'}</button>`}</td></tr>`)}</table>
     </div>
+    <${Pair} toast=${toast} />
     <div class="card"><h3>Server</h3>
       ${upd ? html`<p>Version ${upd.current}${upd.available ? html` · <b>update ${upd.latest} available</b> <button onClick=${() => confirm('Install ' + upd.latest + ' and restart?') && act(() => api('POST', '/v1/update/apply'), 'Updating; the server restarts')}>Update now</button>` : ' · up to date'}</p>` : html`<p class="muted">Update status unavailable.</p>`}
     </div>`;

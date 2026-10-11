@@ -2,9 +2,11 @@ package api
 
 import (
 	"bufio"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +44,11 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	}
 	f, _ := fsapi.New(dl, []byte("key"))
 	cfgPath := filepath.Join(dir, "config.yaml")
+	config.Set(cfgPath, "auth.tokens", []map[string]any{ // as on a real install: tokens live in the file
+		{"name": "r", "hash": HashToken("read-tok"), "scope": "read"},
+		{"name": "w", "hash": HashToken("write-tok"), "scope": "write"},
+		{"name": "a", "hash": HashToken("admin-tok"), "scope": "admin"},
+	})
 	reg := provider.NewRegistry(nil, dir)
 	ck, _ := cookies.Open(filepath.Join(dir, "cookies"), filepath.Join(dir, "cookie.key"))
 	box, _ := secret.Open(filepath.Join(dir, "secret.key"))
@@ -256,5 +263,42 @@ func TestDriveConnect(t *testing.T) {
 	_, v := call(t, srv, "GET", "/v1/providers/gdrive/settings", "admin-tok", "")
 	if !strings.Contains(v, `"token":true`) || strings.Contains(v, "rt") {
 		t.Fatalf("settings after sign-in: %s", v)
+	}
+}
+
+func TestPair(t *testing.T) {
+	srv, _ := newTestServer(t)
+	req := `{"name":"phone","url":"https://example.test:8080"}`
+	if code, _ := call(t, srv, "POST", "/v1/pair", "write-tok", req); code != 403 {
+		t.Fatalf("write token may not pair: %d", code)
+	}
+	if code, _ := call(t, srv, "POST", "/v1/pair", "admin-tok", `{"name":"phone","url":"file:///etc"}`); code != 400 && code != 422 {
+		t.Fatalf("bad url accepted: %d", code)
+	}
+	pair := func() string {
+		code, b := call(t, srv, "POST", "/v1/pair", "admin-tok", req)
+		var out pairOut
+		if code != 200 || json.Unmarshal([]byte(b), &out) != nil || !strings.HasPrefix(out.QR, "data:image/png;base64,") {
+			t.Fatalf("%d %s", code, b)
+		}
+		u, _ := url.Parse(out.Payload)
+		if u.Query().Get("url") != "https://example.test:8080" {
+			t.Fatalf("payload %s", out.Payload)
+		}
+		return u.Query().Get("token")
+	}
+	first := pair()
+	if code, _ := call(t, srv, "POST", "/v1/jobs/x/pause", first, ""); code == 401 || code == 403 {
+		t.Fatalf("new device token (default write) refused: %d", code)
+	}
+	second := pair()
+	if code, _ := call(t, srv, "GET", "/v1/jobs", first, ""); code != 401 {
+		t.Fatalf("re-pairing must revoke the old token: %d", code)
+	}
+	if code, _ := call(t, srv, "GET", "/v1/jobs", second, ""); code != 200 {
+		t.Fatalf("second token: %d", code)
+	}
+	if code, _ := call(t, srv, "GET", "/v1/jobs", "admin-tok", ""); code != 200 {
+		t.Fatalf("other tokens must survive: %d", code)
 	}
 }

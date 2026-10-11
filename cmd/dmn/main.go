@@ -213,7 +213,16 @@ func serveCmd() *cobra.Command {
 		if cfg.Updates.Server != "off" {
 			go checkUpdates(ctx, ups, jm, cfg.Updates.Server == "auto")
 		}
-		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box, Tools: inst, Updates: ups})
+		mode := tlsMode(cfg)
+		var cert tls.Certificate
+		fp := ""
+		if mode == "self-signed" {
+			if cert, err = tlsutil.SelfSigned(filepath.Join(cfg.Paths.Data, "tls")); err != nil {
+				return err
+			}
+			fp, _ = tlsutil.Fingerprint(cert)
+		}
+		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box, Tools: inst, Updates: ups, Fingerprint: fp})
 		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()
@@ -222,14 +231,9 @@ func serveCmd() *cobra.Command {
 			srv.Shutdown(sctx)
 		}()
 		defer func() { stop(); <-jobsDone }() // runners save their resume state before the DB closes
-		mode := tlsMode(cfg)
 		fmt.Fprintf(os.Stderr, "dmn %s listening on %s (tls: %s), downloads in %s\n", version, cfg.Server.Listen, mode, cfg.Paths.Downloads)
 		switch mode {
 		case "self-signed":
-			cert, err := tlsutil.SelfSigned(filepath.Join(cfg.Paths.Data, "tls"))
-			if err != nil {
-				return err
-			}
 			srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
 			if err := srv.ListenAndServeTLS("", ""); !errors.Is(err, http.ErrServerClosed) {
 				return err
@@ -464,7 +468,7 @@ func setupCmd() *cobra.Command {
 				return err
 			}
 		}
-		tok, err := addToken(cfg, *name, *scope)
+		tok, err := api.AddToken(cfgPath, *name, *scope)
 		if err != nil {
 			return err
 		}
@@ -1202,23 +1206,6 @@ func cookiesCmd() *cobra.Command {
 	return c
 }
 
-// addToken creates a token, stores only its hash, and returns it. A token with the same name is
-// replaced, so re-running setup or pair for the same device revokes the old token.
-func addToken(cfg *config.Config, name, scope string) (string, error) {
-	if scope != "read" && scope != "write" && scope != "admin" {
-		return "", fmt.Errorf("scope must be read, write or admin")
-	}
-	tok := randomToken("dmn_")
-	toks := []map[string]any{}
-	for _, t := range cfg.Auth.Tokens {
-		if t.Name != name {
-			toks = append(toks, map[string]any{"name": t.Name, "hash": t.Hash, "scope": t.Scope})
-		}
-	}
-	toks = append(toks, map[string]any{"name": name, "hash": api.HashToken(tok), "scope": scope})
-	return tok, config.Set(cfgPath, "auth.tokens", toks)
-}
-
 // lanAddr picks the address a phone on the same network can reach: the listen host when it is
 // specific, else the first private IPv4 of an interface that is up.
 func lanAddr(listen string) string {
@@ -1242,16 +1229,6 @@ func lanAddr(listen string) string {
 		}
 	}
 	return listen
-}
-
-// pairPayload is what the QR code carries: where the server is, a fresh token for this device and
-// the certificate fingerprint to pin.
-func pairPayload(serverURL, token, fingerprint string) string {
-	v := url.Values{"v": {"1"}, "url": {serverURL}, "token": {token}}
-	if fingerprint != "" {
-		v.Set("fp", fingerprint)
-	}
-	return "dmn://pair?" + v.Encode()
 }
 
 func pairCmd() *cobra.Command {
@@ -1284,11 +1261,11 @@ func pairCmd() *cobra.Command {
 			}
 			u = scheme + "://" + host
 		}
-		tok, err := addToken(cfg, *name, *scope)
+		tok, err := api.AddToken(cfgPath, *name, *scope)
 		if err != nil {
 			return err
 		}
-		payload := pairPayload(u, tok, fp)
+		payload := api.PairPayload(u, tok, fp)
 		return show(map[string]string{"payload": payload, "url": u, "fingerprint": fp}, func() {
 			qrterminal.GenerateHalfBlock(payload, qrterminal.L, os.Stdout)
 			fmt.Printf("\nScan with the app. Server %s, device %q (%s).\n", u, *name, *scope)
