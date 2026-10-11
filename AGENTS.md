@@ -54,6 +54,8 @@ internal/selftest  offline end-to-end checks behind `dmn doctor --selftest`
 internal/webui     browser control panel (Preact + htm vendored, no build step), served at /, strict CSP
 internal/video, cookies, gdrive, rclone, acme, tlsutil, secret, extract, limits, update: one concern each
 scripts/           install.sh (signed-release installer) and test-install.sh (runs in CI)
+test/acme/         isolated Pebble ACME issuance test (sh test/acme/run.sh)
+test/sim/          realistic install on an Oracle-like Ubuntu VM with systemd + firewall, native and arm64 (sh test/sim/run.sh)
 internal/netguard  SSRF-guarded dialer/client + guarded proxy for yt-dlp
 internal/provider  built-in sources/destinations, JSON Schema settings, live toggles
 internal/tools     helper tool detection (doctor)
