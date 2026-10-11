@@ -60,6 +60,7 @@
   - [x] M3.4 HTTPS: server.tls auto|off|self-signed, fingerprint pinning (app and CLI --fingerprint), live token reload, `pair` QR (URL, new device token, fingerprint)
   - [x] M3.4b ACME: server.tls acme with CertMagic (HTTP-01 on server.httplisten, TLS-ALPN, DNS-01 via cloudflare/duckdns), plaintext DNS token sealed on first start. Still to do: Pebble issuance test in an isolated network; doctor port and expiry checks
   - [x] M3.5a managed tools: verified install, update, rollback (API /v1/tools/{name}/install|rollback, CLI tools), daily maintenance installs what enabled providers need
+  - [x] M3.5b server self-update: go-selfupdate with an ECDSA-signed checksums.txt (key: CI secret RELEASE_SIGNING_KEY; public key internal/update/release-key.pub; owner keeps an offline backup), confirm-after-boot rollback, daily check (updates.server notify|auto|off), API /v1/update, CLI update check|apply|rollback
   - [ ] M3.5 install.sh, systemd unit, uninstall; self-update (go-selfupdate, ECDSA, confirm-after-boot); managed tool updates; public releases repo
   - [ ] M3.6 web UI (seedr.cc-style): queue with live progress, add (URL, magnet, .torrent, formats), file manager, player, settings rendered from provider JSON Schema, Connect Google Drive; embedded in the binary, same /v1 API
 - [ ] M4 Android app (Kotlin + Compose + DocumentsProvider proposed)

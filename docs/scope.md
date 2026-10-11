@@ -548,6 +548,7 @@ Open-core: open-source the server and CLI, keep the paid Android app closed.
 | Google OAuth client ID: configurable (gdrive settings), created later in the owner's Google Cloud account; never committed | Decided (2026-10-11) |
 | Releases publish to the private repo for now; the repo goes public when the project matures (install.sh and self-update for others work from then) | Decided (2026-10-11); replaces the separate public releases repo idea |
 | Helper tools (yt-dlp, rclone, deno) are installed and updated by our own verified installer from their official GitHub releases (SHA-256 from the project's checksum files, self-test, previous copy kept, rollback), not by each tool's own self-updater: one path that can always roll back. Daily; updates.tools auto or off | Decided (2026-10-11); refines §5.8 |
+| Release signing: ECDSA P-256 key; private key only as the CI secret RELEASE_SIGNING_KEY plus the owner's offline backup; GoReleaser signs checksums.txt with openssl, the server verifies with the embedded public key. Rotate by replacing internal/update/release-key.pub and the secret | Decided (2026-10-11) |
 | Testing stays legal and local: no public torrent swarms, trackers or DHT from the dev machine; isolated Docker swarm with self-generated content only (AGENTS.md rule 7) | Decided (2026-10-10) |
 | Android: Kotlin + Compose with a DocumentsProvider; notifications through UnifiedPush/ntfy | Proposed, decide at M4 |
 

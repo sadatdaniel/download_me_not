@@ -10,6 +10,9 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
+      - name: release signing key
+        run: printf "%s" "$KEY" > release-key.pem && chmod 600 release-key.pem
+        env: { KEY: "${{ secrets.RELEASE_SIGNING_KEY }}" }
       - uses: goreleaser/goreleaser-action@v6
         with: { args: release --clean }
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }

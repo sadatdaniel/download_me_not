@@ -47,7 +47,9 @@ type Config struct {
 		DeleteArchive bool  `koanf:"deletearchive"` // and delete the archive afterwards
 	} `koanf:"jobs"`
 	Updates struct {
-		Tools string `koanf:"tools"` // auto (default): install missing helpers and update them daily; off
+		Tools  string `koanf:"tools"`  // auto (default): install missing helpers and update them daily; off
+		Server string `koanf:"server"` // notify (default): check daily, apply on request; auto: apply when idle; off
+		Token  string `koanf:"token"`  // GitHub token while the repo is private (sealed automatically); env GITHUB_TOKEN also works
 	} `koanf:"updates"`
 	Limits struct {
 		Down int64 `koanf:"down"` // bytes/s, 0 = unlimited
@@ -75,7 +77,7 @@ var FlagKeys = map[string]string{
 }
 
 // Secret keys are redacted by `config show`.
-var secret = []string{"auth.", "server.dnstoken"}
+var secret = []string{"auth.", "server.dnstoken", "updates.token"}
 
 func DefaultPath() string {
 	if p := os.Getenv("DMN_CONFIG"); p != "" {
@@ -95,6 +97,7 @@ func defaults() map[string]any {
 		"server.tls":        "auto",
 		"server.httplisten": ":80",
 		"updates.tools":     "auto",
+		"updates.server":    "notify",
 		"paths.data":        filepath.Join(home, ".local", "share", "dmn"),
 		"paths.downloads":   filepath.Join(home, "Downloads", "dmn"),
 	}

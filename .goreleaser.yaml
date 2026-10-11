@@ -18,3 +18,10 @@ checksum:
   name_template: checksums.txt
 changelog:
   use: github
+# checksums.txt is signed with the ECDSA release key (CI secret RELEASE_SIGNING_KEY, written to
+# release-key.pem by the workflow); go-selfupdate verifies it against internal/update/release-key.pub.
+signs:
+  - artifacts: checksum
+    cmd: openssl
+    args: ["dgst", "-sha256", "-sign", "release-key.pem", "-out", "${signature}", "${artifact}"]
+    signature: "${artifact}.sig"

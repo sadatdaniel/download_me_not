@@ -28,3 +28,6 @@ Thumbs.db
 
 # local docker compose volumes
 /dmn/
+
+# release signing key (CI only)
+release-key.pem

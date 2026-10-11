@@ -50,10 +50,14 @@ import (
 	"github.com/sadatdaniel/download_me_not/internal/store"
 	"github.com/sadatdaniel/download_me_not/internal/tlsutil"
 	"github.com/sadatdaniel/download_me_not/internal/tools"
+	"github.com/sadatdaniel/download_me_not/internal/update"
 	"github.com/sadatdaniel/download_me_not/internal/video"
 )
 
 var version = "dev" // set by -ldflags "-X main.version=..."
+
+// updateRepo is where signed releases are published.
+var updateRepo = "sadatdaniel/download_me_not"
 
 var (
 	cfgPath  string
@@ -74,10 +78,10 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd(), updateCmd())
 	for name, ms := range map[string]string{
-		"copy":   "M3",
-		"update": "M3", "uninstall": "M3",
+		"copy":      "M3",
+		"uninstall": "M3",
 	} {
 		root.AddCommand(&cobra.Command{Use: name, Short: "(not implemented yet: " + ms + ")",
 			DisableFlagParsing: true,
@@ -138,6 +142,14 @@ func serveCmd() *cobra.Command {
 		if err := os.MkdirAll(cfg.Paths.Data, 0o700); err != nil {
 			return err
 		}
+		// Confirm-after-boot (scope §5.8): a new version that never got healthy is replaced by the
+		// previous one here; exiting lets the supervisor start it.
+		upd := update.Updater{Repo: updateRepo, DataDir: cfg.Paths.Data}
+		if rb, err := upd.Boot(); err != nil {
+			fmt.Fprintln(os.Stderr, "update:", err)
+		} else if rb {
+			return errors.New("the updated version did not start correctly; the previous version was restored and will start next")
+		}
 		db, err := store.Open(filepath.Join(cfg.Paths.Data, "dmn.db"))
 		if err != nil {
 			return err
@@ -191,7 +203,26 @@ func serveCmd() *cobra.Command {
 		}
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
-		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box, Tools: inst})
+		updTok, _ := box.Open("updates.token", cfg.Updates.Token)
+		if updTok == "" {
+			updTok = os.Getenv("GITHUB_TOKEN")
+		} else if !secret.IsSealed(cfg.Updates.Token) {
+			config.Set(cfgPath, "updates.token", box.Seal("updates.token", updTok))
+		}
+		upd.Token = updTok
+		ups := &api.Updates{Updater: upd, Version: version, Restart: stop}
+		go upd.ConfirmWhenHealthy(ctx, func() error {
+			for _, c := range selftest.Run(ctx) {
+				if !c.OK {
+					return errors.New(c.Name + ": " + c.Detail)
+				}
+			}
+			return nil
+		})
+		if cfg.Updates.Server != "off" {
+			go checkUpdates(ctx, ups, jm, cfg.Updates.Server == "auto")
+		}
+		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box, Tools: inst, Updates: ups})
 		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()
@@ -1475,5 +1506,68 @@ func toolsCmd() *cobra.Command {
 			return show(out, func() { fmt.Printf("%s %s\n", args[0], out["version"]) })
 		}})
 	}
+	return c
+}
+
+// checkUpdates looks for a newer signed release daily. With auto it applies it when no download is
+// running, then restarts; otherwise the app and web UI show "update available".
+func checkUpdates(ctx context.Context, ups *api.Updates, jm *jobs.Manager, auto bool) {
+	t := time.NewTimer(5 * time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		c, err := ups.Check(ctx)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "update check:", err)
+		} else if c.Available && auto && len(jm.Progress()) == 0 {
+			if v, err := ups.Updater.Apply(ctx, ups.Version); err != nil {
+				fmt.Fprintln(os.Stderr, "update:", err)
+			} else if v != ups.Version {
+				fmt.Fprintf(os.Stderr, "update: installed %s, restarting\n", v)
+				ups.Restart()
+				return
+			}
+		}
+		t.Reset(24 * time.Hour)
+	}
+}
+
+func updateCmd() *cobra.Command {
+	c := &cobra.Command{Use: "update", Short: "Check for, apply or undo server updates (signed releases)"}
+	c.AddCommand(&cobra.Command{Use: "check", RunE: func(*cobra.Command, []string) error {
+		var ch update.Check
+		if err := call("GET", "/v1/update?refresh=true", nil, &ch); err != nil {
+			return err
+		}
+		return show(ch, func() {
+			if ch.Available {
+				fmt.Printf("update available: %s -> %s (dmn update apply)\n", ch.Current, ch.Latest)
+			} else {
+				fmt.Printf("up to date (%s)\n", ch.Current)
+			}
+		})
+	}})
+	c.AddCommand(&cobra.Command{Use: "apply", RunE: func(*cobra.Command, []string) error {
+		var out map[string]string
+		if err := call("POST", "/v1/update/apply", nil, &out); err != nil {
+			return err
+		}
+		return show(out, func() { fmt.Printf("now %s; the server restarts\n", out["version"]) })
+	}})
+	c.AddCommand(&cobra.Command{Use: "rollback", Short: "Put back the previous binary (run on the server; restart it afterwards)", RunE: func(*cobra.Command, []string) error {
+		_, cfg, err := config.Load(cfgPath, nil)
+		if err != nil {
+			return err
+		}
+		if err := (update.Updater{DataDir: cfg.Paths.Data}).Rollback(); err != nil {
+			return err
+		}
+		fmt.Println("previous version restored; restart the service (systemctl restart dmn)")
+		return nil
+	}})
 	return c
 }

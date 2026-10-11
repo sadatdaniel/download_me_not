@@ -46,6 +46,7 @@ type Deps struct {
 	Cookies        *cookies.Store
 	Secret         *secret.Box
 	Tools          *tools.Installer // managed helper tools; nil = not offered
+	Updates        *Updates         // server self-update; nil = not offered (e.g. tests)
 	GoogleEndpoint *oauth2.Endpoint // tests point Drive sign-in at a fake server; nil = Google
 }
 
@@ -178,6 +179,7 @@ func (s *server) routes(api huma.API) {
 	s.cookieRoutes(api)
 	s.providerRoutes(api)
 	s.toolRoutes(api)
+	s.updateRoutes(api)
 
 	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
 		map[string]any{"progress": []jobs.Progress{}},
