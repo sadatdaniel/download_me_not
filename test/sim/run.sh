@@ -84,7 +84,7 @@ run_pass() {
 	docker restart dmn-sim >/dev/null
 	wait_for 'vm systemctl is-active --quiet dmn' 60 || fail "service not back after reboot"
 	wait_for host_health 30 || fail "service or firewall rules lost after reboot"
-	ok "service$([ $FW = 1 ] && echo ' and firewall rules') survive a reboot"
+	ok "service$([ $FW = 1 ] && echo ' and firewall rules') back after a reboot"
 
 	step "uninstall"
 	vm sh -c 'mkdir -p /srv/dmn/downloads && touch /srv/dmn/downloads/keep.me'
