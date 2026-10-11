@@ -79,3 +79,4 @@
 - 2026-10-11: M3.3-M3.6 built (Drive, HTTPS/ACME, tools, self-update, installer, web UI). Disk-full incident; resumed after cleanup. Releasing v0.1.0.
 - 2026-10-11: v0.1.1-v0.1.3 released (signed; update-e2e and Docker image on GHCR in the release workflow). README + docs/deploy.md. Pebble ACME test passes. Owner is trying a first real install on an Oracle Cloud ARM (arm64) VM with install.sh --from; Oracle needs both the VCN security list and the instance iptables opened (see docs/deploy.md). M4 paused.
 - 2026-10-11: repo made public (history scrubbed). test/sim realistic install (Oracle-like VM, native + arm64) passes against v0.1.4 after three fixes.
+- 2026-10-11: owner's first Oracle install showed ffmpeg missing; install.sh now installs it (v0.1.5), simulation checks it and passes.
