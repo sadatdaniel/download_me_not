@@ -79,7 +79,7 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd(), updateCmd(), uninstallCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd(), updateCmd(), uninstallCmd(), healthCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -1488,8 +1488,20 @@ func maintainTools(ctx context.Context, inst *tools.Installer, reg *provider.Reg
 
 func toolsCmd() *cobra.Command {
 	c := &cobra.Command{Use: "tools", Short: "Install, update or roll back managed helper tools (yt-dlp, rclone, deno)"}
+	local := c.PersistentFlags().String("data", "", "act on this data folder directly, without a running server (image builds)")
 	for _, a := range []string{"install", "rollback"} {
 		c.AddCommand(&cobra.Command{Use: a + " <name>", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+			if *local != "" {
+				in := tools.Installer{Client: http.DefaultClient, DataDir: *local}
+				if a == "rollback" {
+					return in.Rollback(args[0])
+				}
+				tag, err := in.Install(context.Background(), args[0])
+				if err == nil {
+					fmt.Println(args[0], tag)
+				}
+				return err
+			}
 			var out map[string]string
 			if err := call("POST", "/v1/tools/"+url.PathEscape(args[0])+"/"+a, nil, &out); err != nil {
 				return err
@@ -1601,4 +1613,33 @@ func uninstallCmd() *cobra.Command {
 		return nil
 	}
 	return c
+}
+
+// healthCmd checks the local server (Docker HEALTHCHECK). It talks to 127.0.0.1 on the configured
+// port and accepts the self-signed certificate: it only proves this process answers.
+func healthCmd() *cobra.Command {
+	return &cobra.Command{Use: "health", Hidden: true, RunE: func(*cobra.Command, []string) error {
+		_, cfg, err := config.Load(cfgPath, nil)
+		if err != nil {
+			return err
+		}
+		_, port, err := net.SplitHostPort(cfg.Server.Listen)
+		if err != nil {
+			return err
+		}
+		scheme := "https"
+		if tlsMode(cfg) == "off" {
+			scheme = "http"
+		}
+		c := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+		resp, err := c.Get(scheme + "://127.0.0.1:" + port + "/v1/health")
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return fmt.Errorf("health: HTTP %d", resp.StatusCode)
+		}
+		return nil
+	}}
 }

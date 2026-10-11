@@ -1,13 +1,21 @@
-# First run:  docker compose run --rm dmn setup     (prints your API token once)
-# Then:       docker compose up -d
-# Update:     docker compose pull && docker compose up -d
+# Start:   docker compose up -d       (the first start prints your API token: docker compose logs dmn)
+# Pair:    docker compose exec dmn dmn pair
+# Update:  docker compose pull && docker compose up -d
+# Helper tools (yt-dlp, rclone, deno) also update themselves daily inside the data volume.
 services:
   dmn:
+    image: ghcr.io/sadatdaniel/download_me_not:latest
     build: .
-    image: dmn:local
     restart: unless-stopped
-    ports: ["127.0.0.1:8080:8080"] # put a reverse proxy, tunnel or VPN in front; see scope §5.10
+    ports:
+      - "8080:8080"          # HTTPS with a self-signed certificate (the app pins it via `dmn pair`)
+      - "42069:42069"        # torrents
+      - "42069:42069/udp"
     volumes:
-      - ./dmn/config:/config
-      - ./dmn/data:/data
-      - ./dmn/downloads:/downloads
+      - config:/config
+      - data:/data
+      - downloads:/downloads # or a host folder owned by uid 1000, e.g. /srv/media:/downloads
+volumes:
+  config:
+  data:
+  downloads:
