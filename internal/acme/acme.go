@@ -7,8 +7,10 @@ package acme
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/caddyserver/certmagic"
@@ -23,6 +25,7 @@ type Options struct {
 	DNSToken    string
 	StorageDir  string // certificates and ACME account
 	CA          string // directory URL; "" = Let's Encrypt production
+	CARoot      string // PEM file of the CA's TLS root, for private CAs (step-ca, a test CA); "" = system roots
 }
 
 // Setup starts managing the certificate in the background (CertMagic retries with backoff and
@@ -37,6 +40,17 @@ func Setup(ctx context.Context, o Options) (*tls.Config, http.Handler, error) {
 	tmpl := certmagic.ACMEIssuer{CA: o.CA, Email: o.Email, Agreed: true}
 	if tmpl.CA == "" {
 		tmpl.CA = certmagic.LetsEncryptProductionCA
+	}
+	if o.CARoot != "" {
+		pemData, err := os.ReadFile(o.CARoot)
+		if err != nil {
+			return nil, nil, fmt.Errorf("server.acmecaroot: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pemData) {
+			return nil, nil, fmt.Errorf("server.acmecaroot %s: no PEM certificates", o.CARoot)
+		}
+		tmpl.TrustedRoots = pool
 	}
 	switch o.DNSProvider {
 	case "":

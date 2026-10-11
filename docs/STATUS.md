@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1, M2 (minus M2.7) and M3 (minus Pebble test, Docker image, real Google client) are done. Releases v0.1.1 and v0.1.2 are published on the private repo; install.sh verified a real signed release, and the release workflow proves self-update from the previous release on every tag. (v0.1.0 has misnamed archives; ignore it.)
-**Next action:** Server readiness before any app work: (1) done: README + docs/deploy.md; (2) Pebble ACME issuance test in an isolated Docker network; (3) M2.7 multi-container swarm with netem; (4) a full code audit and fixes; (5) the owner deploys on a real server and confirms.
+**Next action:** Server readiness before any app work: (1) done: README + docs/deploy.md; (2) done: Pebble ACME test (test/acme/run.sh); (3) M2.7 multi-container swarm with netem; (4) a full code audit and fixes; (5) the owner deploys on a real server and confirms.
 **Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
@@ -58,7 +58,7 @@
   - [x] M3.2 cookies: import a Netscape cookie file per domain, AES-GCM at rest (key file 0600 in the config dir), passed to yt-dlp and httpdl, never logged or returned
   - [x] M3.3 Google Drive: device-flow Connect (API /v1/providers/gdrive/signin, CLI providers config gdrive --signin), encrypted settings (secret.key), copy jobs /v1/copy and CLI copy, post-completion Drive copy with optional delete-local. Tested with a fake Google server and rclone's local backend. **Still to verify with a real Google client ID** (owner creates it later)
   - [x] M3.4 HTTPS: server.tls auto|off|self-signed, fingerprint pinning (app and CLI --fingerprint), live token reload, `pair` QR (URL, new device token, fingerprint)
-  - [x] M3.4b ACME: server.tls acme with CertMagic (HTTP-01 on server.httplisten, TLS-ALPN, DNS-01 via cloudflare/duckdns), plaintext DNS token sealed on first start. Still to do: Pebble issuance test in an isolated network; doctor port and expiry checks
+  - [x] M3.4b ACME: server.tls acme with CertMagic (HTTP-01 on server.httplisten, TLS-ALPN, DNS-01 via cloudflare/duckdns), plaintext DNS token sealed on first start. Pebble issuance test passes (test/acme/run.sh, isolated network, strict mode). Still to do: doctor port and expiry checks
   - [x] M3.5a managed tools: verified install, update, rollback (API /v1/tools/{name}/install|rollback, CLI tools), daily maintenance installs what enabled providers need
   - [x] M3.5b server self-update: go-selfupdate with an ECDSA-signed checksums.txt (key: CI secret RELEASE_SIGNING_KEY; public key internal/update/release-key.pub; owner keeps an offline backup), confirm-after-boot rollback, daily check (updates.server notify|auto|off), API /v1/update, CLI update check|apply|rollback
   - [x] M3.5c install.sh (signature + checksum verified, service user owns the binary for self-update, hardened systemd unit, config + owner token + pairing QR, re-run = upgrade/repair, --uninstall/--purge never touches downloads), `dmn uninstall` (typed confirmation to delete downloads), install.sh shipped as a release asset, CI installer test in a container. Docker image publishing still to do

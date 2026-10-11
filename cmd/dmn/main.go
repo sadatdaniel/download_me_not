@@ -249,7 +249,7 @@ func serveCmd() *cobra.Command {
 				}
 			}
 			tc, h80, err := acme.Setup(ctx, acme.Options{Domain: cfg.Server.Domain, Email: cfg.Server.Email,
-				DNSProvider: cfg.Server.DNSProvider, DNSToken: tok, StorageDir: filepath.Join(cfg.Paths.Data, "acme")})
+				DNSProvider: cfg.Server.DNSProvider, DNSToken: tok, StorageDir: filepath.Join(cfg.Paths.Data, "acme"), CA: cfg.Server.ACMECA, CARoot: cfg.Server.ACMECARoot})
 			if err != nil {
 				return err
 			}

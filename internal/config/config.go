@@ -31,6 +31,8 @@ type Config struct {
 		DNSProvider string `koanf:"dnsprovider"` // acme: cloudflare or duckdns for DNS-01 (no open ports needed)
 		DNSToken    string `koanf:"dnstoken"`    // acme: DNS API token; sealed automatically on first start
 		HTTPListen  string `koanf:"httplisten"`  // acme: port 80 listener for HTTP-01 and redirects
+		ACMECA      string `koanf:"acmeca"`      // acme: CA directory URL; empty = Let's Encrypt
+		ACMECARoot  string `koanf:"acmecaroot"`  // acme: PEM root for a private CA's TLS (step-ca, tests)
 	} `koanf:"server"`
 	Paths struct {
 		Data      string `koanf:"data"`

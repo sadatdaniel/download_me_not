@@ -1,0 +1,38 @@
+# Isolated ACME issuance test (no internet: internal network). Pebble is Let's Encrypt's test CA;
+# challtestsrv answers its DNS so dl.test points at our server. Run: sh test/acme/run.sh
+name: dmn-acme-test
+networks:
+  acme:
+    internal: true
+    ipam: { config: [{ subnet: 10.77.0.0/24 }] }
+services:
+  challtestsrv:
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
+    command: -defaultIPv6 "" -defaultIPv4 10.77.0.10
+    networks: { acme: { ipv4_address: 10.77.0.30 } }
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:latest
+    command: -config test/config/pebble-config.json -strict -dnsserver 10.77.0.30:8053
+    environment: { PEBBLE_VA_NOSLEEP: "1" }
+    networks: { acme: { ipv4_address: 10.77.0.20 } }
+  dmn:
+    image: dmn-dev:latest
+    working_dir: /src
+    volumes:
+      - ../..:/src:ro
+      - dmn-dev_dmn-gomod:/go/pkg/mod
+      - dmn-dev_dmn-gocache:/root/.cache/go-build
+      - pebble-root:/pebble:ro
+    environment: { GOFLAGS: -mod=mod, GOPROXY: "off", CGO_ENABLED: "0", DMN_CONFIG: /tmp/c/config.yaml, HOME: /tmp/h }
+    # HTTPS on 5001 (Pebble's TLS-ALPN port) and HTTP on 5002 (its HTTP-01 port).
+    command: >
+      sh -c "go build -buildvcs=false -o /tmp/dmn ./cmd/dmn && /tmp/dmn setup >/dev/null &&
+      /tmp/dmn config set server.tls acme && /tmp/dmn config set server.domain dl.test &&
+      /tmp/dmn config set server.listen 0.0.0.0:5001 && /tmp/dmn config set server.httplisten 0.0.0.0:5002 &&
+      /tmp/dmn config set server.acmeca https://pebble:14000/dir && /tmp/dmn config set server.acmecaroot /pebble/pebble.minica.pem &&
+      exec /tmp/dmn serve"
+    networks: { acme: { ipv4_address: 10.77.0.10 } }
+volumes:
+  dmn-dev_dmn-gomod: { external: true }
+  dmn-dev_dmn-gocache: { external: true }
+  pebble-root: {}
