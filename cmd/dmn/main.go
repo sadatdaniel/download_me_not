@@ -1345,7 +1345,7 @@ func destinations(cfg *config.Config, reg *provider.Registry, box *secret.Box) f
 			return nil, err
 		}
 		if tok == "" {
-			return nil, fmt.Errorf("Google Drive is not connected: use Connect Google Drive (or `dmn providers config gdrive --signin`)")
+			return nil, fmt.Errorf("not connected to Google Drive: use Connect Google Drive (or `dmn providers config gdrive --signin`)")
 		}
 		folder := str("folder")
 		if folder == "" {

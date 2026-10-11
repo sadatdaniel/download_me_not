@@ -7,7 +7,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "ok: $*"; }
 
 W=$(mktemp -d)
-cd /src && CGO_ENABLED=0 GOFLAGS=-mod=mod go build -o "$W/dmn" ./cmd/dmn
+cd /src && CGO_ENABLED=0 GOFLAGS=-mod=mod go build -buildvcs=false -o "$W/dmn" ./cmd/dmn
 cd "$W"
 tar -czf dmn_0.0.1-test_linux_amd64.tar.gz dmn
 sha256sum dmn_0.0.1-test_linux_amd64.tar.gz > checksums.txt
