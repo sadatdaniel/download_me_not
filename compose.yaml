@@ -1,5 +1,5 @@
 # Start:   docker compose up -d       (the first start prints your API token: docker compose logs dmn)
-# Pair:    docker compose exec dmn dmn pair
+# Pair:    docker compose exec dmn dmn pair --url https://<server-ip>:8080
 # Update:  docker compose pull && docker compose up -d
 # Helper tools (yt-dlp, rclone, deno) also update themselves daily inside the data volume.
 services:

@@ -1,7 +1,7 @@
 # Status
 
 **Current state:** M1, M2 (minus M2.7) and M3 (minus Pebble test, Docker image, real Google client) are done. Releases v0.1.1 and v0.1.2 are published on the private repo; install.sh verified a real signed release, and the release workflow proves self-update from the previous release on every tag. (v0.1.0 has misnamed archives; ignore it.)
-**Next action:** Server readiness before any app work: (1) README + docs/deploy.md (VPS, Raspberry Pi, Docker, first run, pairing, firewall, updates); (2) Pebble ACME issuance test in an isolated Docker network; (3) M2.7 multi-container swarm with netem; (4) a full code audit and fixes; (5) the owner deploys on a real server and confirms.
+**Next action:** Server readiness before any app work: (1) done: README + docs/deploy.md; (2) Pebble ACME issuance test in an isolated Docker network; (3) M2.7 multi-container swarm with netem; (4) a full code audit and fixes; (5) the owner deploys on a real server and confirms.
 **Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
