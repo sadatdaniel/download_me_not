@@ -17,6 +17,8 @@ builds:
     ldflags: ["-s -w -X main.version={{.Version}}"]
 archives:
   - formats: [tar.gz]
+    # install.sh looks for dmn_<version>_linux_<arch>; go-selfupdate matches the _linux_<arch> suffix.
+    name_template: "dmn_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
     files: [README*, THIRD_PARTY*]
 checksum:
   name_template: checksums.txt
