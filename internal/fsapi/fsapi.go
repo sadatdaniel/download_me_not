@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -297,4 +298,33 @@ func (f *FS) Zip(w io.Writer, p string) error {
 		return err
 	}
 	return zw.Close()
+}
+
+var mediaExts = map[string]bool{
+	".mp4": true, ".mkv": true, ".webm": true, ".avi": true, ".mov": true, ".m4v": true, ".ts": true, ".m2ts": true,
+	".wmv": true, ".flv": true, ".mp3": true, ".flac": true, ".m4a": true, ".aac": true, ".ogg": true, ".opus": true, ".wav": true,
+}
+
+// Media lists every video and audio file under the download folder, newest first, at most limit.
+// ponytail: walks the tree on every call; fine for thousands of files. Upgrade: index in SQLite, updated by
+// jobs on completion and by fsapi writes, if libraries grow to hundreds of thousands of files.
+func (f *FS) Media(limit int) ([]Entry, error) {
+	var out []Entry
+	err := fs.WalkDir(f.root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // unreadable folder: skip it, list the rest
+		}
+		if d.IsDir() || !mediaExts[strings.ToLower(path.Ext(p))] {
+			return nil
+		}
+		if fi, err := d.Info(); err == nil {
+			out = append(out, entry(p, fi))
+		}
+		return nil
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].ModTime.After(out[j].ModTime) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, err
 }

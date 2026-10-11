@@ -237,6 +237,13 @@ func (s *server) routes(api huma.API) {
 			}
 		})
 
+	huma.Register(api, op("media", "GET", "/v1/media", "read", "Every video and audio file under the download folder, newest first"),
+		func(ctx context.Context, in *struct {
+			Limit int `query:"limit" default:"2000" minimum:"1" maximum:"20000"`
+		}) (*struct{ Body []fsapi.Entry }, error) {
+			es, err := s.FS.Media(in.Limit)
+			return body(es), err
+		})
 	huma.Register(api, op("fs-list", "GET", "/v1/fs", "read", "List a folder"),
 		func(ctx context.Context, in *pathIn) (*struct{ Body []fsapi.Entry }, error) {
 			es, err := s.FS.List(in.Path)

@@ -149,3 +149,23 @@ func TestCopyAndZip(t *testing.T) {
 		t.Fatal("zip followed a symlink out of the root")
 	}
 }
+
+func TestMedia(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "Shows", "S1"), 0o755)
+	os.WriteFile(filepath.Join(dir, "Shows", "S1", "e1.mkv"), []byte("v"), 0o644)
+	os.WriteFile(filepath.Join(dir, "song.FLAC"), []byte("a"), 0o644)
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("t"), 0o644)
+	os.WriteFile(filepath.Join(dir, "film.mkv.part"), []byte("p"), 0o644)
+	old := time.Now().Add(-time.Hour)
+	os.Chtimes(filepath.Join(dir, "song.FLAC"), old, old)
+	f, _ := New(dir, []byte("k"))
+	defer f.Close()
+	es, err := f.Media(10)
+	if err != nil || len(es) != 2 || es[0].Path != "/Shows/S1/e1.mkv" || es[1].Name != "song.FLAC" {
+		t.Fatalf("%v %+v", err, es)
+	}
+	if es, _ = f.Media(1); len(es) != 1 {
+		t.Fatalf("limit: %d", len(es))
+	}
+}
