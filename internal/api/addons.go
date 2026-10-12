@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"path"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -24,6 +26,7 @@ import (
 
 type addonInfo struct {
 	URL      string           `json:"url"`
+	Enabled  bool             `json:"enabled"`
 	Manifest *addons.Manifest `json:"manifest,omitempty"`
 	Error    string           `json:"error,omitempty"`
 }
@@ -42,9 +45,18 @@ type catalogRow struct {
 }
 
 type addonState struct {
-	mu      sync.Mutex
-	enabled bool
-	urls    []string
+	mu       sync.Mutex
+	enabled  bool
+	urls     []string
+	disabled []string
+}
+
+// defaultAddons are installed the first time add-ons are switched on: what Stremio itself ships with that
+// fits here (titles, subtitles, and links to legal streaming services). None of them offers torrents.
+var defaultAddons = []string{
+	"https://v3-cinemeta.strem.io",
+	"https://opensubtitles-v3.strem.io",
+	"https://watchhub.strem.io",
 }
 
 func (s *server) addonList() (bool, []string) {
@@ -56,6 +68,9 @@ func (s *server) addonList() (bool, []string) {
 // installed returns the add-ons whose manifests load (from cache usually), in the order the user added them.
 func (s *server) installed(ctx context.Context) []addons.Addon {
 	_, urls := s.addonList()
+	s.addon.mu.Lock()
+	urls = slices.DeleteFunc(urls, func(u string) bool { return slices.Contains(s.addon.disabled, u) })
+	s.addon.mu.Unlock()
 	out := make([]addons.Addon, len(urls))
 	ok := make([]bool, len(urls))
 	var wg sync.WaitGroup
@@ -114,11 +129,18 @@ func (s *server) saveAddons() error {
 	if err := config.Set(s.CfgPath, "addons.enabled", on); err != nil {
 		return err
 	}
-	return config.Set(s.CfgPath, "addons.urls", urls)
+	if err := config.Set(s.CfgPath, "addons.urls", urls); err != nil {
+		return err
+	}
+	s.addon.mu.Lock()
+	disabled := slices.Clone(s.addon.disabled)
+	s.addon.mu.Unlock()
+	return config.Set(s.CfgPath, "addons.disabled", disabled)
 }
 
 func (s *server) addonRoutes(api huma.API) {
 	s.addon.enabled, s.addon.urls = s.Cfg.Addons.Enabled, slices.Clone(s.Cfg.Addons.URLs)
+	s.addon.disabled = slices.Clone(s.Cfg.Addons.Disabled)
 
 	huma.Register(api, op("addons", "GET", "/v1/addons", "read", "Installed Stremio add-ons and whether the feature is on"),
 		func(ctx context.Context, _ *struct{}) (*struct{ Body addonsOut }, error) {
@@ -128,11 +150,14 @@ func (s *server) addonRoutes(api huma.API) {
 				return body(out), nil
 			}
 			out.Addons = parallel(urls, func(u string) (addonInfo, bool) {
+				s.addon.mu.Lock()
+				on := !slices.Contains(s.addon.disabled, u)
+				s.addon.mu.Unlock()
 				m, err := s.Addons.Manifest(ctx, u)
 				if err != nil {
-					return addonInfo{URL: u, Error: err.Error()}, true
+					return addonInfo{URL: u, Enabled: on, Error: err.Error()}, true
 				}
-				return addonInfo{URL: u, Manifest: &m}, true
+				return addonInfo{URL: u, Enabled: on, Manifest: &m}, true
 			})
 			return body(out), nil
 		})
@@ -145,6 +170,9 @@ func (s *server) addonRoutes(api huma.API) {
 		}) (*struct{}, error) {
 			s.addon.mu.Lock()
 			s.addon.enabled = in.Body.Enabled
+			if in.Body.Enabled && len(s.addon.urls) == 0 && len(s.addon.disabled) == 0 {
+				s.addon.urls = slices.Clone(defaultAddons) // first time on: the ethical defaults
+			}
 			s.addon.mu.Unlock()
 			return nil, s.saveAddons()
 		})
@@ -180,6 +208,23 @@ func (s *server) addonRoutes(api huma.API) {
 		}) (*struct{}, error) {
 			s.addon.mu.Lock()
 			s.addon.urls = slices.DeleteFunc(s.addon.urls, func(u string) bool { return u == in.URL })
+			s.addon.disabled = slices.DeleteFunc(s.addon.disabled, func(u string) bool { return u == in.URL })
+			s.addon.mu.Unlock()
+			return nil, s.saveAddons()
+		})
+
+	huma.Register(api, op("addons-state", "PUT", "/v1/addons/state", "admin", "Switch one installed add-on on or off"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				URL     string `json:"url"`
+				Enabled bool   `json:"enabled"`
+			}
+		}) (*struct{}, error) {
+			s.addon.mu.Lock()
+			s.addon.disabled = slices.DeleteFunc(s.addon.disabled, func(u string) bool { return u == in.Body.URL })
+			if !in.Body.Enabled {
+				s.addon.disabled = append(s.addon.disabled, in.Body.URL)
+			}
 			s.addon.mu.Unlock()
 			return nil, s.saveAddons()
 		})
@@ -319,13 +364,12 @@ func (s *server) addonRoutes(api huma.API) {
 		})
 
 	type playOut struct {
-		Job     *store.Job        `json:"job,omitempty" doc:"the download on this server (torrents, or any stream with mode standard)"`
-		FileIdx int               `json:"fileIdx" doc:"file inside the torrent to play (-1 = the largest)"`
-		URL     string            `json:"url,omitempty" doc:"a direct stream the app plays itself"`
-		Headers map[string]string `json:"headers,omitempty"`
+		Job      *store.Job `json:"job,omitempty" doc:"the download on this server; play it through its stream link"`
+		FileIdx  int        `json:"fileIdx" doc:"file inside the torrent to play (-1 = the largest)"`
+		External string     `json:"external,omitempty" doc:"a web page to open (e.g. a legal streaming service); nothing is downloaded"`
 	}
 	huma.Register(api, op("addons-play", "POST", "/v1/addons/play", "write",
-		"Start a stream from an add-on: torrents become stream-mode downloads here; direct links are returned to play (or downloaded with mode standard)"),
+		"Start a stream from an add-on on this server: torrents and direct links become downloads (stream mode plays while downloading); external links are returned to open"),
 		func(ctx context.Context, in *struct {
 			Body struct {
 				Stream addons.Stream `json:"stream"`
@@ -352,19 +396,18 @@ func (s *server) addonRoutes(api huma.API) {
 					return nil, huma.Error400BadRequest(err.Error())
 				}
 				req = jobs.AddRequest{Source: m, Mode: mode}
-			case st.URL != "" && mode == "stream":
-				out.URL = st.URL
-				if st.BehaviorHints.ProxyHeaders != nil {
-					out.Headers = st.BehaviorHints.ProxyHeaders.Request
-				}
-				return body(out), nil
 			case st.URL != "":
-				req = jobs.AddRequest{Source: st.URL}
+				// Direct links also go through the server (the app only ever talks to the server): a web download,
+				// in stream mode when playing, which the app plays through the job's stream link.
+				req = jobs.AddRequest{Source: st.URL, Mode: mode}
 				if st.BehaviorHints.ProxyHeaders != nil {
 					req.Header = st.BehaviorHints.ProxyHeaders.Request
 				}
+			case st.ExternalURL != "":
+				out.External = st.ExternalURL
+				return body(out), nil
 			default:
-				return nil, huma.Error400BadRequest("this stream can't be played here (YouTube or external link)")
+				return nil, huma.Error400BadRequest("this stream can't be played here (a YouTube video)")
 			}
 			j, _, err := s.Jobs.Add(req)
 			if err != nil {
@@ -424,5 +467,74 @@ func (s *server) addonRoutes(api huma.API) {
 				}
 			}
 			return nil, huma.Error409Conflict("no free subtitle file name next to the video")
+		})
+}
+
+// addonProxy fetches an add-on's poster or subtitle file for the app, so the app only ever talks to this server.
+// Read token, or a signed link (POST /v1/addons/proxy/sign) for players that can't send one. Only images and
+// subtitle/text files pass, at most 10 MiB, always through the SSRF guard.
+func (s *server) addonProxy(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	target := q.Get("url")
+	if q.Get("sig") != "" {
+		if !s.FS.Verify("addon-proxy/"+target, q.Get("exp"), q.Get("sig")) {
+			http.Error(w, "invalid or expired link", http.StatusForbidden)
+			return
+		}
+	} else if rank[s.scope(r.Header.Get("Authorization"))] < rank["read"] {
+		http.Error(w, "missing or invalid token", http.StatusUnauthorized)
+		return
+	}
+	if err := s.needAddons(); err != nil {
+		http.Error(w, "add-ons are switched off", http.StatusNotFound)
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+	if err != nil || (req.URL.Scheme != "https" && req.URL.Scheme != "http") {
+		http.Error(w, "invalid url", http.StatusBadRequest)
+		return
+	}
+	resp, err := s.Addons.HTTP.Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "upstream answered "+resp.Status, http.StatusBadGateway)
+		return
+	}
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+	if !(strings.HasPrefix(ct, "image/") || strings.HasPrefix(ct, "text/plain") || strings.HasPrefix(ct, "text/vtt") ||
+		strings.Contains(ct, "subrip") || strings.HasPrefix(ct, "application/octet-stream") || ct == "") {
+		http.Error(w, "only images and subtitle files pass through", http.StatusUnsupportedMediaType)
+		return
+	}
+	h := w.Header()
+	if ct == "" || strings.HasPrefix(ct, "application/octet-stream") {
+		ct = "text/plain; charset=utf-8" // subtitle files are often served untyped
+	}
+	h.Set("Content-Type", ct)
+	h.Set("Cache-Control", "private, max-age=86400")
+	h.Set("Content-Security-Policy", "sandbox")
+	io.Copy(w, io.LimitReader(resp.Body, 10<<20))
+}
+
+func (s *server) addonProxyRoutes(api huma.API) {
+	huma.Register(api, op("addons-proxy-sign", "POST", "/v1/addons/proxy/sign", "read",
+		"A short-lived link to an add-on image or subtitle through this server (for players that can't send a token)"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				URL string `json:"url" minLength:"8"`
+			}
+		}) (*struct{ Body map[string]string }, error) {
+			if err := s.needAddons(); err != nil {
+				return nil, err
+			}
+			q, err := s.FS.Sign("addon-proxy/"+in.Body.URL, 6*time.Hour)
+			if err != nil {
+				return nil, err
+			}
+			return body(map[string]string{"url": "/v1/addons/proxy?url=" + url.QueryEscape(in.Body.URL) + "&" + q}), nil
 		})
 }

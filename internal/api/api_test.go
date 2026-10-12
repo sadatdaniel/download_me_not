@@ -418,7 +418,14 @@ func TestAddons(t *testing.T) {
 		case strings.HasPrefix(r.URL.Path, "/subtitles/movie/tt0000001"):
 			w.Write([]byte(`{"subtitles":[{"id":"1","url":"` + "http://" + r.Host + `/sub.srt","lang":"eng"}]}`))
 		case r.URL.Path == "/sub.srt":
+			w.Header().Set("Content-Type", "application/x-subrip")
 			w.Write([]byte("1\n00:00:01,000 --> 00:00:02,000\nHello\n"))
+		case r.URL.Path == "/p.png":
+			w.Header().Set("Content-Type", "image/png")
+			w.Write([]byte("PNG fake"))
+		case r.URL.Path == "/page.html":
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte("<html></html>"))
 		default:
 			http.NotFound(w, r)
 		}
@@ -475,5 +482,50 @@ func TestAddons(t *testing.T) {
 	// Saving again never overwrites: a second file appears.
 	if _, b = call(t, srv, "POST", "/v1/addons/subtitles/save", "write-tok", `{"url":"`+addon.URL+`/sub.srt","video":"/video.mp4","lang":"eng"}`); !strings.Contains(b, "video.eng.2.srt") {
 		t.Fatalf("second save: %s", b)
+	}
+
+	// Direct links also become downloads on the server; external links are only handed back.
+	code, b = call(t, srv, "POST", "/v1/addons/play", "write-tok", `{"stream":{"url":"`+addon.URL+`/sub.srt"}}`)
+	if code != 200 || !strings.Contains(b, `"kind":"web"`) || !strings.Contains(b, `"mode":"stream"`) {
+		t.Fatalf("play url: %d %s", code, b)
+	}
+	code, b = call(t, srv, "POST", "/v1/addons/play", "write-tok", `{"stream":{"externalUrl":"https://watch.test/x"}}`)
+	if code != 200 || !strings.Contains(b, `"external":"https://watch.test/x"`) {
+		t.Fatalf("external: %d %s", code, b)
+	}
+
+	// Posters and subtitles pass through the server; other content does not; signed links work without a token.
+	img := "/v1/addons/proxy?url=" + url.QueryEscape(addon.URL+"/p.png")
+	if code, b = call(t, srv, "GET", img, "read-tok", ""); code != 200 || !strings.HasPrefix(b, "PNG") {
+		t.Fatalf("proxy image: %d %q", code, b)
+	}
+	if code, _ = call(t, srv, "GET", img, "", ""); code != 401 {
+		t.Fatalf("proxy without token: %d", code)
+	}
+	if code, _ = call(t, srv, "GET", "/v1/addons/proxy?url="+url.QueryEscape(addon.URL+"/page.html"), "read-tok", ""); code != 415 {
+		t.Fatalf("proxy passed html: %d", code)
+	}
+	_, b = call(t, srv, "POST", "/v1/addons/proxy/sign", "read-tok", `{"url":"`+addon.URL+`/sub.srt"}`)
+	var sg struct{ URL string }
+	json.Unmarshal([]byte(b), &sg)
+	if code, b = call(t, srv, "GET", sg.URL, "", ""); code != 200 || !strings.Contains(b, "Hello") {
+		t.Fatalf("signed proxy: %d %q", code, b)
+	}
+
+	// Switching one add-on off hides it; the defaults are only added when nothing was ever installed.
+	call(t, srv, "PUT", "/v1/addons/state", "admin-tok", `{"url":"`+addon.URL+`","enabled":false}`)
+	if _, b = call(t, srv, "GET", "/v1/addons/home", "read-tok", ""); strings.TrimSpace(b) != "[]" {
+		t.Fatalf("disabled add-on still answers: %s", b)
+	}
+	if _, b = call(t, srv, "GET", "/v1/addons", "read-tok", ""); !strings.Contains(b, `"enabled":false`) {
+		t.Fatalf("state not shown: %s", b)
+	}
+}
+
+func TestAddonDefaults(t *testing.T) {
+	srv, cfgPath := newTestServer(t)
+	call(t, srv, "PUT", "/v1/addons/enabled", "admin-tok", `{"enabled":true}`)
+	if _, c, _ := config.Load(cfgPath, nil); len(c.Addons.URLs) != 3 || !strings.Contains(strings.Join(c.Addons.URLs, " "), "cinemeta") {
+		t.Fatalf("defaults not installed on first switch-on: %v", c.Addons.URLs)
 	}
 }

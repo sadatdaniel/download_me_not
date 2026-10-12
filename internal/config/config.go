@@ -64,8 +64,9 @@ type Config struct {
 	// Stremio add-ons (experimental, off by default): base URLs the server fetches catalogs, streams and subtitles
 	// from. Users add them; none are shipped.
 	Addons struct {
-		Enabled bool     `koanf:"enabled"`
-		URLs    []string `koanf:"urls"`
+		Enabled  bool     `koanf:"enabled"`
+		URLs     []string `koanf:"urls"`
+		Disabled []string `koanf:"disabled"` // installed but switched off
 	} `koanf:"addons"`
 }
 

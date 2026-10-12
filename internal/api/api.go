@@ -143,6 +143,7 @@ func New(d Deps) (http.Handler, huma.API) {
 	mux.HandleFunc("GET /v1/jobs/{id}/stream", s.stream)
 	mux.HandleFunc("GET /v1/zip/{path...}", s.zip)
 	mux.HandleFunc("GET /v1/archive/raw/{path...}", s.archiveRaw)
+	mux.HandleFunc("GET /v1/addons/proxy", s.addonProxy)
 	ui := webui.Handler()
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v1/") {
@@ -225,6 +226,7 @@ func (s *server) routes(api huma.API) {
 	s.portRoutes(api)
 	s.cleanupRoutes(api)
 	s.addonRoutes(api)
+	s.addonProxyRoutes(api)
 
 	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
 		map[string]any{"progress": []jobs.Progress{}},
