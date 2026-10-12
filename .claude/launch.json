@@ -17,10 +17,10 @@
       "runtimeExecutable": "docker",
       "runtimeArgs": [
         "run", "--rm", "--name", "dmn-appweb", "-p", "127.0.0.1:18080:8080", "-p", "127.0.0.1:18081:8081",
-        "-v", "${workspaceFolder}:/src:ro", "-v", "${workspaceFolder}/../download_me_not_app/build/web:/web:ro",
+        "-v", "${workspaceFolder}:/src:ro", "-v", "${workspaceFolder}/../download_me_not_app/build/web:/web:ro", "-v", "dmn-preview-config:/tmp/c",
         "-v", "dmn-dev_dmn-gomod:/go/pkg/mod", "-v", "dmn-dev_dmn-gocache:/root/.cache/go-build",
         "-w", "/src", "dmn-dev:latest", "sh", "-c",
-        "go build -buildvcs=false -o /tmp/dmn ./cmd/dmn && export DMN_CONFIG=/tmp/c/config.yaml HOME=/tmp/h && /tmp/dmn config set server.tls off && /tmp/dmn config set server.listen 0.0.0.0:8080 && /tmp/dmn config set server.cors '[\"http://localhost:18081\"]' && /tmp/dmn config set paths.downloads /tmp/dl && /tmp/dmn setup && mkdir -p /tmp/dl/Movies /tmp/dl/Empty /tmp/dl/Music /tmp/dl/Pictures /tmp/dl/Books /tmp/dl/Downloads /tmp/dl/Backups && head -c 300000 /dev/urandom > /tmp/dl/Downloads/ubuntu.iso.part && ffmpeg -loglevel error -f lavfi -i testsrc=duration=5:size=640x360:rate=25 -c:v libx264 /tmp/dl/Movies/test-pattern.mp4 && echo hello > /tmp/dl/notes.txt && cd /tmp/dl && python3 -c \"import zipfile; z=zipfile.ZipFile('pack.zip','w'); z.write('notes.txt','docs/notes.txt'); z.write('Movies/test-pattern.mp4','clip.mp4'); z.close()\" && (/tmp/dmn serve &) && exec python3 -m http.server 8081 --directory /web"
+        "go build -buildvcs=false -o /tmp/dmn ./cmd/dmn && export DMN_CONFIG=/tmp/c/config.yaml HOME=/tmp/h && /tmp/dmn config set server.tls off && /tmp/dmn config set server.listen 0.0.0.0:8080 && /tmp/dmn config set server.cors '[\"http://localhost:18081\"]' && /tmp/dmn config set paths.downloads /tmp/dl && (grep -q tokens /tmp/c/config.yaml || /tmp/dmn setup) && mkdir -p /tmp/dl/Movies /tmp/dl/Empty /tmp/dl/Music /tmp/dl/Pictures /tmp/dl/Books /tmp/dl/Downloads /tmp/dl/Backups && head -c 300000 /dev/urandom > /tmp/dl/Downloads/ubuntu.iso.part && ffmpeg -loglevel error -f lavfi -i testsrc=duration=5:size=640x360:rate=25 -c:v libx264 /tmp/dl/Movies/test-pattern.mp4 && echo hello > /tmp/dl/notes.txt && cd /tmp/dl && python3 -c \"import zipfile; z=zipfile.ZipFile('pack.zip','w'); z.write('notes.txt','docs/notes.txt'); z.write('Movies/test-pattern.mp4','clip.mp4'); z.close()\" && (/tmp/dmn serve &) && exec python3 -m http.server 8081 --directory /web"
       ],
       "port": 18081
     }
