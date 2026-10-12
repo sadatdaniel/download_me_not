@@ -10,7 +10,7 @@
 4. M2.7 multi-container torrent swarm with netem (isolated network); a full code audit (`/ponytail-audit`) and fixes.
 5. M4 continues in the app repo (checklist below kept as the plan).
 
-**Open (known gaps):** real Google OAuth client ID (owner creates it; Drive tested only against a fake Google), GHCR image visibility (owner sets it public in the GitHub UI), FTP (deferred), per-torrent speed limits, licence choice.
+**Open (known gaps):** stream-window test skipped under -race (single-peer swarm stalls there only; anacrolix interested/choked race, see internal/engine/stream_test.go), real Google OAuth client ID (owner creates it; Drive tested only against a fake Google), GHCR image visibility (owner sets it public in the GitHub UI), FTP (deferred), per-torrent speed limits, licence choice.
 **Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
