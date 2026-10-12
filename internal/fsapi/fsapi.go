@@ -345,3 +345,22 @@ func (f *FS) Parts() ([]Entry, error) {
 	})
 	return out, err
 }
+
+// WriteNew creates a file the server itself produced (e.g. a subtitle fetched from an add-on). It never
+// overwrites, and it is not an upload path: clients cannot send file contents.
+func (f *FS) WriteNew(p string, data []byte) error {
+	c, err := clean(p)
+	if err != nil {
+		return err
+	}
+	file, err := f.root.OpenFile(c, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		f.root.Remove(c)
+		return err
+	}
+	return file.Close()
+}

@@ -34,6 +34,7 @@ Goal: a server people install once and forget. The approach: **list everything t
 | SSRF / hostile input | Constant | `netguard` on every dial, also for yt-dlp (proxy) and torrent HTTP | Tests | — |
 | Phone (Termux) kills the process | Common | Crash-only design | — | Restart loop script plus reconcile on start |
 | Streaming a torrent stalls (pieces arrive rarest-first) | Every stream on a slow swarm | Stream mode downloads in playback order: a 32 MiB high-priority window after the first missing piece, pieces beyond it wait; data is held until priorities are set | Real test 2026-10-12 (Sintel at 450 KB/s): 5 s of stalls per minute and 26 s seeks before the fix; offline test stream_test.go | The window moves every 2 s; a reader seeking ahead raises its own pieces |
+| A Stremio add-on is slow, down or returns junk | Common | Each add-on is fetched separately (6 at a time, 20 s timeout, 8 MiB cap) and a failing one is left out of the merged answer; answers are cached | The add-on list shows the manifest error | Nothing to repair; the user removes a broken add-on |
 | Hostile or huge archive opened in the file manager | Occasional | Browsing is read-only (no unpack); entry names checked by fs.ValidPath; the archive opens through os.Root | 400 with the library's error; encrypted archives get a clear message | Nothing to repair. Known limit: compressed tars are decompressed from the start on each request (ponytail in extract/browse.go) |
 
 ## Self-test: one command, used everywhere

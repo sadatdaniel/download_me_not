@@ -24,6 +24,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"golang.org/x/oauth2"
 
+	"github.com/sadatdaniel/download_me_not/internal/addons"
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
@@ -50,6 +51,7 @@ type Deps struct {
 	Tools          *tools.Installer // managed helper tools; nil = not offered
 	Updates        *Updates         // server self-update; nil = not offered (e.g. tests)
 	GoogleEndpoint *oauth2.Endpoint // tests point Drive sign-in at a fake server; nil = Google
+	Addons         *addons.Client   // Stremio add-on client (guarded HTTP); nil = feature not offered
 	Fingerprint    string           // SHA-256 of the self-signed certificate, for pairing; empty = none to pin
 }
 
@@ -68,6 +70,7 @@ type server struct {
 	cfgMtime time.Time
 	signin   signIns
 	checked  time.Time
+	addon    addonState
 }
 
 func (s *server) scope(authz string) string {
@@ -221,6 +224,7 @@ func (s *server) routes(api huma.API) {
 	s.archiveRoutes(api)
 	s.portRoutes(api)
 	s.cleanupRoutes(api)
+	s.addonRoutes(api)
 
 	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
 		map[string]any{"progress": []jobs.Progress{}},

@@ -35,6 +35,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sadatdaniel/download_me_not/internal/acme"
+	"github.com/sadatdaniel/download_me_not/internal/addons"
 	"github.com/sadatdaniel/download_me_not/internal/api"
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
@@ -222,7 +223,8 @@ func serveCmd() *cobra.Command {
 			}
 			fp, _ = tlsutil.Fingerprint(cert)
 		}
-		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box, Tools: inst, Updates: ups, Fingerprint: fp})
+		h, _ := api.New(api.Deps{Version: version, Cfg: cfg, CfgPath: cfgPath, DB: db, FS: fsys, Providers: reg, Jobs: jm, Limits: lim, Cookies: ck, Secret: box, Tools: inst, Updates: ups, Fingerprint: fp,
+			Addons: &addons.Client{HTTP: netguard.Client()}})
 		srv := &http.Server{Addr: cfg.Server.Listen, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()

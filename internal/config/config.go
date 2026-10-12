@@ -61,6 +61,12 @@ type Config struct {
 		Up   int64 `koanf:"up"`
 	} `koanf:"limits"`
 	Providers map[string]Provider `koanf:"providers"`
+	// Stremio add-ons (experimental, off by default): base URLs the server fetches catalogs, streams and subtitles
+	// from. Users add them; none are shipped.
+	Addons struct {
+		Enabled bool     `koanf:"enabled"`
+		URLs    []string `koanf:"urls"`
+	} `koanf:"addons"`
 }
 
 type Token struct {

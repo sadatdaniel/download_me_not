@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/sadatdaniel/download_me_not/internal/addons"
 	"github.com/sadatdaniel/download_me_not/internal/config"
 	"github.com/sadatdaniel/download_me_not/internal/cookies"
 	"github.com/sadatdaniel/download_me_not/internal/fsapi"
@@ -54,7 +55,8 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	ck, _ := cookies.Open(filepath.Join(dir, "cookies"), filepath.Join(dir, "cookie.key"))
 	box, _ := secret.Open(filepath.Join(dir, "secret.key"))
 	jm := jobs.New(jobs.Options{DB: db, Downloads: dl, Client: http.DefaultClient, Allowed: reg.Enabled})
-	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm, Limits: limits.New(0, 0), Cookies: ck, Secret: box, GoogleEndpoint: testGoogle})
+	h, _ := New(Deps{Version: "test", Cfg: cfg, CfgPath: cfgPath, DB: db, FS: f, Providers: reg, Jobs: jm, Limits: limits.New(0, 0), Cookies: ck, Secret: box, GoogleEndpoint: testGoogle,
+		Addons: &addons.Client{HTTP: http.DefaultClient}}) // tests use a local test add-on (loopback)
 	srv := httptest.NewServer(h)
 	t.Cleanup(func() { srv.Close(); db.Close(); f.Close() })
 	return srv, cfgPath
@@ -394,5 +396,84 @@ func TestCleanupOrphans(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dl, "keep.txt")); err != nil {
 		t.Fatal("cleanup removed a normal file")
+	}
+}
+
+// A whole add-on session against a local test add-on of our own (rule 7): install, browse, search, details,
+// streams, play a torrent stream (becomes a stream-mode job), and save a subtitle next to a video.
+func TestAddons(t *testing.T) {
+	addon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/manifest.json":
+			w.Write([]byte(`{"id":"org.test","version":"1.0.0","name":"Test add-on","description":"d","types":["movie"],
+			  "idPrefixes":["tt"],"resources":["catalog","meta","stream","subtitles"],
+			  "catalogs":[{"type":"movie","id":"top","name":"Top","extra":[{"name":"search"}]}]}`))
+		case strings.HasPrefix(r.URL.Path, "/catalog/movie/top"):
+			w.Write([]byte(`{"metas":[{"id":"tt0000001","type":"movie","name":"Test Pattern","poster":"https://img.test/p.jpg"}]}`))
+		case r.URL.Path == "/meta/movie/tt0000001.json":
+			w.Write([]byte(`{"meta":{"id":"tt0000001","type":"movie","name":"Test Pattern"}}`))
+		case r.URL.Path == "/stream/movie/tt0000001.json":
+			w.Write([]byte(`{"streams":[{"name":"720p","infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":0}]}`))
+		case strings.HasPrefix(r.URL.Path, "/subtitles/movie/tt0000001"):
+			w.Write([]byte(`{"subtitles":[{"id":"1","url":"` + "http://" + r.Host + `/sub.srt","lang":"eng"}]}`))
+		case r.URL.Path == "/sub.srt":
+			w.Write([]byte("1\n00:00:01,000 --> 00:00:02,000\nHello\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer addon.Close()
+	srv, cfgPath := newTestServer(t)
+
+	if code, _ := call(t, srv, "GET", "/v1/addons/home", "read-tok", ""); code != 404 {
+		t.Fatalf("add-ons must be off by default: %d", code)
+	}
+	if code, _ := call(t, srv, "POST", "/v1/addons", "write-tok", `{"url":"`+addon.URL+`/manifest.json"}`); code != 403 {
+		t.Fatalf("installing needs admin: %d", code)
+	}
+	if code, b := call(t, srv, "POST", "/v1/addons", "admin-tok", `{"url":"`+addon.URL+`/manifest.json"}`); code != 200 || !strings.Contains(b, "Test add-on") {
+		t.Fatalf("install: %d %s", code, b)
+	}
+	if code, _ := call(t, srv, "POST", "/v1/addons", "admin-tok", `{"url":"`+addon.URL+`/nothing/manifest.json"}`); code != 400 {
+		t.Fatalf("a broken add-on was installed: %d", code)
+	}
+	call(t, srv, "PUT", "/v1/addons/enabled", "admin-tok", `{"enabled":true}`)
+	if _, c, _ := config.Load(cfgPath, nil); !c.Addons.Enabled || len(c.Addons.URLs) != 1 {
+		t.Fatalf("not saved: %+v", c.Addons)
+	}
+
+	if code, b := call(t, srv, "GET", "/v1/addons/home", "read-tok", ""); code != 200 || !strings.Contains(b, "Test Pattern") {
+		t.Fatalf("home: %d %s", code, b)
+	}
+	if code, b := call(t, srv, "GET", "/v1/addons/search?q=test", "read-tok", ""); code != 200 || !strings.Contains(b, "tt0000001") {
+		t.Fatalf("search: %d %s", code, b)
+	}
+	if code, b := call(t, srv, "GET", "/v1/addons/meta?type=movie&id=tt0000001", "read-tok", ""); code != 200 || !strings.Contains(b, "Test Pattern") {
+		t.Fatalf("meta: %d %s", code, b)
+	}
+	code, b := call(t, srv, "GET", "/v1/addons/streams?type=movie&id=tt0000001", "read-tok", "")
+	if code != 200 || !strings.Contains(b, `"addon":"Test add-on"`) {
+		t.Fatalf("streams: %d %s", code, b)
+	}
+	code, b = call(t, srv, "POST", "/v1/addons/play", "write-tok",
+		`{"name":"Test Pattern","stream":{"infoHash":"0123456789abcdef0123456789abcdef01234567","fileIdx":0}}`)
+	if code != 200 || !strings.Contains(b, `"kind":"torrent"`) || !strings.Contains(b, `"mode":"stream"`) || !strings.Contains(b, `"fileIdx":0`) {
+		t.Fatalf("play: %d %s", code, b)
+	}
+	code, b = call(t, srv, "GET", "/v1/addons/subtitles?type=movie&id=tt0000001&filename=video.mp4", "read-tok", "")
+	if code != 200 || !strings.Contains(b, "sub.srt") {
+		t.Fatalf("subtitles: %d %s", code, b)
+	}
+	code, b = call(t, srv, "POST", "/v1/addons/subtitles/save", "write-tok", `{"url":"`+addon.URL+`/sub.srt","video":"/video.mp4","lang":"eng"}`)
+	if code != 200 || !strings.Contains(b, `"/video.eng.srt"`) {
+		t.Fatalf("save: %d %s", code, b)
+	}
+	if got, _ := os.ReadFile(filepath.Join(filepath.Dir(cfgPath), "dl", "video.eng.srt")); !strings.Contains(string(got), "Hello") {
+		t.Fatalf("saved subtitle: %q", got)
+	}
+	// Saving again never overwrites: a second file appears.
+	if _, b = call(t, srv, "POST", "/v1/addons/subtitles/save", "write-tok", `{"url":"`+addon.URL+`/sub.srt","video":"/video.mp4","lang":"eng"}`); !strings.Contains(b, "video.eng.2.srt") {
+		t.Fatalf("second save: %s", b)
 	}
 }
