@@ -28,7 +28,7 @@ repo is public: https://github.com/sadatdaniel/download_me_not
    session-log line), commit, push. Keep chat replies short; put details in the docs.
 
 Context about the owner: deploys on an Oracle Cloud ARM (arm64) Ubuntu VM; works on Windows with
-Docker Desktop (no Go on the host; Flutter SDK is installed for the later app work). The Android
-app (Flutter) is paused until the server is confirmed working in real use.
+Docker Desktop (no Go on the host). The Flutter app is in the private repo sadatdaniel/download_me_not_app
+(sibling folder `download_me_not_app`), built with the Flutter SDK on the host (not Docker); read its README.
 
 ---
