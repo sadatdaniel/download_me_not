@@ -372,3 +372,27 @@ func TestPortsBeforeTorrents(t *testing.T) {
 		t.Fatalf("%d %s", code, b)
 	}
 }
+
+func TestCleanupOrphans(t *testing.T) {
+	srv, cfgPath := newTestServer(t)
+	dl := filepath.Join(filepath.Dir(cfgPath), "dl")
+	os.MkdirAll(filepath.Join(dl, "old"), 0o755)
+	os.WriteFile(filepath.Join(dl, "old", "film.mkv.part"), make([]byte, 1000), 0o644)
+	os.WriteFile(filepath.Join(dl, "keep.txt"), []byte("not partial"), 0o644)
+	code, b := call(t, srv, "GET", "/v1/cleanup", "read-tok", "")
+	if code != 200 || !strings.Contains(b, "film.mkv.part") || !strings.Contains(b, `"bytes":1000`) {
+		t.Fatalf("list: %d %s", code, b)
+	}
+	if code, _ = call(t, srv, "POST", "/v1/cleanup", "read-tok", ""); code != 403 {
+		t.Fatalf("read token may not delete: %d", code)
+	}
+	if code, b = call(t, srv, "POST", "/v1/cleanup", "write-tok", ""); code != 200 || !strings.Contains(b, `"bytes":1000`) {
+		t.Fatalf("cleanup: %d %s", code, b)
+	}
+	if _, err := os.Stat(filepath.Join(dl, "old", "film.mkv.part")); !os.IsNotExist(err) {
+		t.Fatal("orphan still there")
+	}
+	if _, err := os.Stat(filepath.Join(dl, "keep.txt")); err != nil {
+		t.Fatal("cleanup removed a normal file")
+	}
+}

@@ -220,6 +220,7 @@ func (s *server) routes(api huma.API) {
 	s.pairRoutes(api)
 	s.archiveRoutes(api)
 	s.portRoutes(api)
+	s.cleanupRoutes(api)
 
 	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
 		map[string]any{"progress": []jobs.Progress{}},

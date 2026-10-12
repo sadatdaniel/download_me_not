@@ -70,10 +70,11 @@ type Manager struct {
 	o    Options
 	kick chan struct{}
 
-	mu   sync.Mutex
-	run  map[string]*runner
-	eng  engine.Engine
-	last map[string]sample
+	mu    sync.Mutex
+	run   map[string]*runner
+	eng   engine.Engine
+	last  map[string]sample
+	tries map[string]int // automatic retries per failed job (since start; a restart gives a failed job its tries back)
 }
 
 type runner struct {
@@ -146,7 +147,7 @@ func New(o Options) *Manager {
 	if o.Seed.Policy == "" {
 		o.Seed.Policy = "stop"
 	}
-	return &Manager{o: o, kick: make(chan struct{}, 1), run: map[string]*runner{}, last: map[string]sample{}}
+	return &Manager{o: o, kick: make(chan struct{}, 1), run: map[string]*runner{}, last: map[string]sample{}, tries: map[string]int{}}
 }
 
 func (m *Manager) poke() {
@@ -293,7 +294,8 @@ func (m *Manager) SetMode(id, mode string) error {
 	return nil
 }
 
-// Cancel stops a job and forgets it; with deleteFiles it also removes its files.
+// Cancel stops a job and forgets it; with deleteFiles it also removes its files. An unfinished web download's
+// .part file is always removed: without the job it cannot be resumed, so it is only clutter.
 func (m *Manager) Cancel(id string, deleteFiles bool) error {
 	j, err := m.get(id)
 	if err != nil {
@@ -314,12 +316,17 @@ func (m *Manager) Cancel(id string, deleteFiles bool) error {
 			}
 		}
 	}
-	if deleteFiles && j.Path != "" {
+	unfinished := j.State != "done" && j.State != "seeding"
+	if (deleteFiles || (unfinished && j.Kind != "torrent")) && j.Path != "" {
 		root, err := os.OpenRoot(m.o.Downloads)
 		if err != nil {
 			return err
 		}
-		for _, p := range []string{j.Path + ".part", j.Path} {
+		paths := []string{j.Path + ".part"}
+		if deleteFiles {
+			paths = append(paths, j.Path)
+		}
+		for _, p := range paths {
 			if err := root.RemoveAll(p); err != nil {
 				errs = append(errs, err)
 			}
@@ -403,7 +410,12 @@ func (m *Manager) reconcile(ctx context.Context) error {
 		r.mu.Unlock()
 	}
 	for _, j := range jobs {
-		if j.State == "done" || (j.State == "failed" && j.Want == "running") {
+		if j.State == "done" {
+			delete(m.tries, j.ID)
+			continue
+		}
+		if j.State == "failed" && j.Want == "running" {
+			m.maybeRetry(j)
 			continue
 		}
 		r := m.run[j.ID]
@@ -996,4 +1008,34 @@ func pickFile(fsys fs.FS, dir string, index int) (string, error) {
 		}
 	}
 	return best.path, nil
+}
+
+// retryAfter is how long a failed download waits before each automatic retry (like IDM or aria2c's
+// --retry-wait); after the last one it stays failed until the user resumes it.
+var retryAfter = []time.Duration{30 * time.Second, 2 * time.Minute, 10 * time.Minute}
+
+// permanent errors don't get better by waiting: the link is wrong, gone, forbidden or blocked by policy.
+func permanent(msg string) bool {
+	m := strings.ToLower(msg)
+	for _, s := range []string{"prohibited", "404", "403", "401", "410", "not found", "forbidden", "unsupported",
+		"invalid", "password-protected", "no such file", "is a folder", "too large"} {
+		if strings.Contains(m, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// maybeRetry requeues a failed job when its error looks temporary (network drop, timeout, 5xx) and it has
+// tries left. Called by reconcile with m.mu held.
+func (m *Manager) maybeRetry(j store.Job) {
+	n := m.tries[j.ID]
+	if n >= len(retryAfter) || permanent(j.Error) || time.Since(time.Unix(j.Updated, 0)) < retryAfter[n] {
+		return
+	}
+	m.tries[j.ID] = n + 1
+	store.SetJob(m.o.DB, j.ID, map[string]any{
+		"state": "queued",
+		"error": fmt.Sprintf("retry %d of %d after: %s", n+1, len(retryAfter), j.Error),
+	})
 }

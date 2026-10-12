@@ -328,3 +328,20 @@ func (f *FS) Media(limit int) ([]Entry, error) {
 	}
 	return out, err
 }
+
+// Parts lists every unfinished-download file (*.part) under the download folder.
+func (f *FS) Parts() ([]Entry, error) {
+	var out []Entry
+	err := fs.WalkDir(f.root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() && strings.HasSuffix(p, ".part") {
+			if fi, err := d.Info(); err == nil {
+				out = append(out, entry(p, fi))
+			}
+		}
+		return nil
+	})
+	return out, err
+}

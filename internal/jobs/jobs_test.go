@@ -601,3 +601,32 @@ func TestPickFile(t *testing.T) {
 		t.Fatal("index out of range accepted")
 	}
 }
+
+func TestAutoRetry(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "j.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	m := New(Options{DB: db, Downloads: t.TempDir()})
+	old := time.Now().Add(-time.Hour).Unix()
+	store.InsertJob(db, store.Job{ID: "net", Kind: "web", Want: "running", State: "failed", Error: "read: connection reset by peer", Created: old, Updated: old})
+	store.InsertJob(db, store.Job{ID: "gone", Kind: "web", Want: "running", State: "failed", Error: "HTTP 404 Not Found", Created: old, Updated: old})
+	for i := 1; i <= 4; i++ {
+		for _, id := range []string{"net", "gone"} {
+			j, _ := store.GetJob(db, id)
+			m.mu.Lock()
+			m.maybeRetry(j)
+			m.mu.Unlock()
+		}
+		net, _ := store.GetJob(db, "net")
+		if want := map[bool]string{true: "queued", false: "failed"}[i <= 3]; net.State != want {
+			t.Fatalf("round %d: temporary error state %q, want %q (%s)", i, net.State, want, net.Error)
+		}
+		store.SetJob(db, "net", map[string]any{"state": "failed", "error": "timeout"}) // fails again, long ago
+		db.Exec(`UPDATE jobs SET updated = ? WHERE id = ?`, old, "net")
+		if gone, _ := store.GetJob(db, "gone"); gone.State != "failed" {
+			t.Fatal("permanent error was retried")
+		}
+	}
+}
