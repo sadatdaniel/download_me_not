@@ -286,6 +286,8 @@ func (m *Manager) SetMode(id, mode string) error {
 	} else if t, err := m.torrentOf(id); err == nil && mode == "stream" {
 		t.PrioritizeEnds(largest(t.Files()))
 		t.StreamWindow(largest(t.Files()), streamWindow)
+	} else if t, err := m.torrentOf(id); err == nil {
+		t.StreamOff(largest(t.Files()))
 	}
 	m.poke()
 	return nil

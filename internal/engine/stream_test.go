@@ -123,4 +123,61 @@ func TestStreamWindowIsSequential(t *testing.T) {
 	if total < 10 || beyond > 2+total/20 {
 		t.Fatalf("not sequential: %d of %d complete pieces are beyond the window", beyond, total)
 	}
+
+	// Switching back to standard releases the parked pieces: pieces far ahead start completing.
+	lt.StreamOff(0)
+	time.Sleep(2 * time.Second)
+	far := 0
+	for i := first + 64; i < tt.NumPieces()-1; i++ {
+		if tt.Piece(i).State().Complete {
+			far++
+		}
+	}
+	if far == 0 {
+		t.Fatal("after StreamOff nothing far ahead downloads: pieces are still parked")
+	}
+}
+
+// Skipping a file must really stop it downloading (Start raises every piece to normal, so the file priority
+// alone used to be ignored). Offline loopback swarm, two files of our own data.
+func TestSkipFile(t *testing.T) {
+	sdir := t.TempDir()
+	os.MkdirAll(filepath.Join(sdir, "pack"), 0o755)
+	for _, n := range []string{"a.bin", "b.bin"} {
+		os.WriteFile(filepath.Join(sdir, "pack", n), bytes.Repeat([]byte(n), 2<<20/5), 0o644)
+	}
+	info := metainfo.Info{PieceLength: 64 << 10}
+	if err := info.BuildFromFilePath(filepath.Join(sdir, "pack")); err != nil {
+		t.Fatal(err)
+	}
+	ib, _ := bencode.Marshal(info)
+	var mi bytes.Buffer
+	(&metainfo.MetaInfo{InfoBytes: ib}).Write(&mi)
+	seeder := newEngine(t, sdir)
+	st, _, _ := seeder.Add(mi.Bytes())
+	if err := st.Recheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	leecher := newEngine(t, t.TempDir())
+	lt, _, _ := leecher.Add(mi.Bytes())
+	lt.(*tor).t.AddClientPeer(seeder.cl)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := lt.WaitInfo(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lt.Pause()
+	lt.Start()
+	lt.SetFilePriority(1, Skip)
+	lt.Resume()
+	for lt.Files()[0].Completed < lt.Files()[0].Length {
+		if ctx.Err() != nil {
+			t.Fatalf("file a never completed: %+v", lt.Files())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if b := lt.Files()[1]; b.Completed > 64<<10 { // at most the piece it shares with file a
+		t.Fatalf("skipped file downloaded %d of %d bytes", b.Completed, b.Length)
+	}
 }

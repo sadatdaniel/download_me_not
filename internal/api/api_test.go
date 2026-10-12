@@ -364,3 +364,11 @@ func TestCORS(t *testing.T) {
 		t.Fatal("unlisted origin allowed")
 	}
 }
+
+func TestPortsBeforeTorrents(t *testing.T) {
+	srv, _ := newTestServer(t)
+	code, b := call(t, srv, "GET", "/v1/ports", "read-tok", "")
+	if code != 200 || !strings.Contains(b, `"verdict":"not-running"`) || !strings.Contains(b, `"torrentPort":42069`) {
+		t.Fatalf("%d %s", code, b)
+	}
+}

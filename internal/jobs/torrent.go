@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sadatdaniel/download_me_not/internal/engine"
 	"github.com/sadatdaniel/download_me_not/internal/extract"
@@ -266,4 +267,17 @@ func largest(files []engine.File) int {
 		}
 	}
 	return best
+}
+
+// TorrentStatus reports the torrent engine's listening port and peers. running is false until the first torrent
+// job starts the engine (it starts lazily, so a server without torrents never opens the port).
+func (m *Manager) TorrentStatus() (port int, running bool, peers, incoming int, lastIncoming time.Time) {
+	m.mu.Lock()
+	e := m.eng
+	m.mu.Unlock()
+	if e == nil {
+		return 0, false, 0, 0, time.Time{}
+	}
+	peers, incoming, lastIncoming = e.PeerCounts()
+	return e.Port(), true, peers, incoming, lastIncoming
 }

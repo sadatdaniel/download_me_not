@@ -37,6 +37,9 @@ type Engine interface {
 	Add(magnetOrTorrent []byte) (Torrent, bool, error)
 	Get(infohash string) (Torrent, bool)
 	Port() int // listening port for peers (for doctor and firewall hints)
+	// PeerCounts: peers connected now, how many of them dialled us, and when that last happened. An incoming
+	// peer proves the torrent port is reachable from the internet.
+	PeerCounts() (total, incoming int, lastIncoming time.Time)
 	Close() error
 }
 
@@ -62,6 +65,7 @@ type Torrent interface {
 	// StreamWindow (stream mode, called periodically) fetches the next window bytes after the first missing
 	// piece of a file first, so playback from the start never waits behind rarest-first pieces.
 	StreamWindow(fileIndex int, window int64)
+	StreamOff(fileIndex int) // back to standard: pieces parked by StreamWindow download normally again
 	// Reader for one file; reading and seeking move download priority (stream mode).
 	Reader(index int) io.ReadSeekCloser
 	Drop(deleteData bool) error
@@ -154,7 +158,8 @@ type engine struct {
 	cl            *torrent.Client
 	dataDir       string
 	nodesFile     string
-	noUDPTrackers bool // proxy mode
+	noUDPTrackers bool         // proxy mode
+	lastIncoming  atomic.Int64 // unix seconds when a peer last connected to us (proof the port is reachable)
 }
 
 func New(o Options) (Engine, error) {
@@ -317,6 +322,24 @@ func (e *engine) Get(infohash string) (Torrent, bool) {
 
 func (e *engine) Port() int { return e.cl.LocalPort() }
 
+func (e *engine) PeerCounts() (total, incoming int, last time.Time) {
+	for _, t := range e.cl.Torrents() {
+		for _, pc := range t.PeerConns() {
+			total++
+			if pc.Discovery == torrent.PeerSourceIncoming {
+				incoming++
+			}
+		}
+	}
+	if incoming > 0 {
+		e.lastIncoming.Store(time.Now().Unix())
+	}
+	if s := e.lastIncoming.Load(); s > 0 {
+		last = time.Unix(s, 0)
+	}
+	return total, incoming, last
+}
+
 // Close saves the DHT routing table (if configured) and stops the client.
 func (e *engine) Close() error {
 	var errs []error
@@ -341,6 +364,9 @@ type tor struct {
 	lastAt   time.Time
 	lastDown int64
 	lastUp   int64
+
+	parked  atomic.Bool  // stream mode: pieces beyond the window are set to wait (see StreamWindow)
+	skipped map[int]bool // files the user skipped (under mu)
 }
 
 func (t *tor) InfoHash() string { return t.t.InfoHash().HexString() }
@@ -387,8 +413,26 @@ func (t *tor) SetFilePriority(i int, p Priority) {
 		Skip: torrent.PiecePriorityNone, Normal: torrent.PiecePriorityNormal,
 		High: torrent.PiecePriorityHigh, Now: torrent.PiecePriorityNow,
 	}[p]
-	if fs := t.t.Files(); i >= 0 && i < len(fs) {
-		fs[i].SetPriority(prio)
+	fs := t.t.Files()
+	if i < 0 || i >= len(fs) {
+		return
+	}
+	fs[i].SetPriority(prio)
+	t.mu.Lock()
+	if t.skipped == nil {
+		t.skipped = map[int]bool{}
+	}
+	t.skipped[i] = p == Skip
+	t.mu.Unlock()
+	// anacrolix takes the highest of file and piece priority, and Start (DownloadAll) raised every piece to
+	// normal, so the file priority alone does not skip. Set the pieces that belong only to this file too;
+	// pieces shared with a neighbouring file keep downloading.
+	pl := t.t.Info().PieceLength
+	off, end := fs[i].Offset(), fs[i].Offset()+fs[i].Length()
+	for pc := fs[i].BeginPieceIndex(); pc < fs[i].EndPieceIndex(); pc++ {
+		if int64(pc)*pl >= off && min(int64(pc+1)*pl, t.t.Length()) <= end {
+			t.t.Piece(pc).SetPriority(prio)
+		}
 	}
 }
 
@@ -641,29 +685,55 @@ func (t *tor) Private() bool {
 }
 
 // StreamWindow downloads a file in playback order, like WebTorrent or qBittorrent's sequential mode: the window
-// after the first incomplete piece is high priority, pieces beyond it wait until the window reaches them.
+// after the first incomplete piece is high priority and pieces beyond it wait until the window reaches them.
+// The file's first and last pieces keep PrioritizeEnds' priority. A player's read-ahead raises pieces on top of
+// this (anacrolix takes the highest of piece, file and reader priority), so seeking ahead still works.
+// Priorities are set, never read back: a piece reports "none" while it is hashed or while data is held.
 func (t *tor) StreamWindow(i int, window int64) {
-	if t.t.Info() == nil {
+	b, e, ok := t.fileRange(i)
+	if !ok {
 		return
 	}
-	fs := t.t.Files()
-	if i < 0 || i >= len(fs) {
-		return
-	}
-	b, e := fs[i].BeginPieceIndex(), fs[i].EndPieceIndex()
 	first := b
 	for first < e && t.t.Piece(first).State().Complete {
 		first++
 	}
-	n := max(1, int(window/t.t.Info().PieceLength))
-	for p := first; p < e; p++ {
-		switch pr := t.t.Piece(p).State().Priority; {
-		case p < first+n && pr < torrent.PiecePriorityHigh:
-			t.t.Piece(p).SetPriority(torrent.PiecePriorityHigh)
-		case p >= first+n && pr == torrent.PiecePriorityNormal:
-			// Beyond the window: wait, or the library requests these alongside the window and playback stalls.
-			// A player seeking there still gets them (reader priority), and the window reaches them in turn.
+	end := min(e, first+max(1, int(window/t.t.Info().PieceLength)))
+	if !t.parked.Swap(true) {
+		for p := end; p < e-1; p++ {
 			t.t.Piece(p).SetPriority(torrent.PiecePriorityNone)
 		}
 	}
+	for p := max(first, b+1); p < end && p < e-1; p++ {
+		t.t.Piece(p).SetPriority(torrent.PiecePriorityHigh)
+	}
+}
+
+// StreamOff undoes StreamWindow when a download switches back to standard mode: every incomplete piece of the
+// file returns to normal priority, so the rest downloads rarest-first again.
+func (t *tor) StreamOff(i int) {
+	b, e, ok := t.fileRange(i)
+	if !ok || !t.parked.Swap(false) {
+		return
+	}
+	for p := b + 1; p < e-1; p++ {
+		if !t.t.Piece(p).State().Complete {
+			t.t.Piece(p).SetPriority(torrent.PiecePriorityNormal)
+		}
+	}
+}
+
+// fileRange is the piece range of file i; ok is false before metadata, for a bad index, or for a skipped file.
+func (t *tor) fileRange(i int) (b, e int, ok bool) {
+	if t.t.Info() == nil {
+		return 0, 0, false
+	}
+	fs := t.t.Files()
+	t.mu.Lock()
+	skip := t.skipped[i]
+	t.mu.Unlock()
+	if i < 0 || i >= len(fs) || skip {
+		return 0, 0, false
+	}
+	return fs[i].BeginPieceIndex(), fs[i].EndPieceIndex(), true
 }
