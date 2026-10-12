@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -581,5 +582,22 @@ func TestDriveCopyPipeline(t *testing.T) {
 	}
 	if _, err := m.AddCopy(CopyRequest{Path: "../etc/passwd"}); err == nil {
 		t.Fatal("copy outside the download folder accepted")
+	}
+}
+
+func TestPickFile(t *testing.T) {
+	fsys := fstest.MapFS{
+		"Sintel/Sintel.de.srt": {Data: []byte("sub")},
+		"Sintel/Sintel.mp4":    {Data: bytes.Repeat([]byte("v"), 100)},
+		"Sintel/poster.jpg":    {Data: []byte("img")},
+	}
+	if p, err := pickFile(fsys, "Sintel", -1); err != nil || p != "Sintel/Sintel.mp4" {
+		t.Fatalf("largest: %q %v", p, err)
+	}
+	if p, err := pickFile(fsys, "Sintel", 0); err != nil || p != "Sintel/Sintel.de.srt" {
+		t.Fatalf("index 0: %q %v", p, err)
+	}
+	if _, err := pickFile(fsys, "Sintel", 3); err == nil {
+		t.Fatal("index out of range accepted")
 	}
 }

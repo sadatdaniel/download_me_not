@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -284,6 +285,7 @@ func (m *Manager) SetMode(id, mode string) error {
 		m.stop(id)
 	} else if t, err := m.torrentOf(id); err == nil && mode == "stream" {
 		t.PrioritizeEnds(largest(t.Files()))
+		t.StreamWindow(largest(t.Files()), streamWindow)
 	}
 	m.poke()
 	return nil
@@ -686,16 +688,19 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 	if err := store.SetJob(m.o.DB, j.ID, f); err != nil {
 		return err
 	}
-	t.Resume()
-	// Both modes download everything; in stream mode the largest file's first and last pieces come
-	// first, and a player's reader raises priority wherever it reads.
+	// No data flows until the priorities are set, or the first requests go to random pieces.
+	t.Pause()
+	// Both modes download everything. Stream mode fetches the largest file's ends first, then in playback
+	// order (StreamWindow); a player's reader raises priority wherever it reads.
 	t.Start() // synchronous here: metadata is known, so file priorities below aren't overwritten
 	for i, p := range meta.Files {
 		t.SetFilePriority(i, filePriority[p])
 	}
 	if j.Mode == "stream" {
 		t.PrioritizeEnds(largest(t.Files()))
+		t.StreamWindow(largest(t.Files()), streamWindow)
 	}
+	t.Resume()
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	for {
@@ -722,9 +727,16 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 			return ctx.Err()
 		case <-tick.C:
 			store.SetJob(m.o.DB, j.ID, map[string]any{"done": t.Stats().Completed})
+			if cur, err := m.get(j.ID); err == nil && cur.Mode == "stream" { // the mode can change while it runs
+				t.StreamWindow(largest(t.Files()), streamWindow)
+			}
 		}
 	}
 }
+
+// streamWindow is how far ahead of the first missing piece stream mode fetches in order: about 3 minutes of
+// 1080p. ponytail: fixed size; scale with the video bitrate if 4K streams stall.
+const streamWindow = 32 << 20
 
 var filePriority = map[string]engine.Priority{"skip": engine.Skip, "normal": engine.Normal, "high": engine.High}
 
@@ -834,11 +846,22 @@ func (m *Manager) Open(ctx context.Context, id string, index int) (io.ReadSeekCl
 			if err != nil {
 				return nil, "", err
 			}
-			if fi, err := f.Stat(); err != nil || fi.IsDir() {
+			fi, err := f.Stat()
+			if err != nil {
 				f.Close()
-				return nil, "", errors.New("this download is a folder: browse it with /v1/fs")
+				return nil, "", err
 			}
-			return f, j.Path, nil
+			if !fi.IsDir() {
+				return f, j.Path, nil
+			}
+			f.Close()
+			// A finished multi-file torrent: play the largest file (the video), or the index-th in path order.
+			p, err := pickFile(root.FS(), j.Path, index)
+			if err != nil {
+				return nil, "", err
+			}
+			f, err = root.Open(p)
+			return f, p, err
 		}
 		return nil, "", ErrNotRunning
 	}
@@ -932,4 +955,43 @@ func (m *Manager) SetPriority(id string, p int) error {
 	}
 	m.poke()
 	return nil
+}
+
+// pickFile chooses a file inside a finished download folder: the index-th regular file in path order, or
+// the largest one when index < 0.
+func pickFile(fsys fs.FS, dir string, index int) (string, error) {
+	type file struct {
+		path string
+		size int64
+	}
+	var files []file
+	err := fs.WalkDir(fsys, dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return err
+		}
+		fi, err := d.Info()
+		if err == nil {
+			files = append(files, file{p, fi.Size()})
+		}
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(files) == 0 {
+		return "", errors.New("this download folder has no files")
+	}
+	if index >= 0 {
+		if index >= len(files) { // WalkDir visits in lexical order, so indexes are stable
+			return "", fmt.Errorf("file %d: the download has %d files", index, len(files))
+		}
+		return files[index].path, nil
+	}
+	best := files[0]
+	for _, f := range files[1:] {
+		if f.size > best.size {
+			best = f
+		}
+	}
+	return best.path, nil
 }

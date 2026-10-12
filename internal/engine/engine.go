@@ -59,6 +59,9 @@ type Torrent interface {
 	SetTrackers(tiers [][]string)
 	Private() bool                // BEP 27: never add outside trackers or record its tracker URLs (they carry passkeys)
 	PrioritizeEnds(fileIndex int) // stream mode: first and last pieces first
+	// StreamWindow (stream mode, called periodically) fetches the next window bytes after the first missing
+	// piece of a file first, so playback from the start never waits behind rarest-first pieces.
+	StreamWindow(fileIndex int, window int64)
 	// Reader for one file; reading and seeking move download priority (stream mode).
 	Reader(index int) io.ReadSeekCloser
 	Drop(deleteData bool) error
@@ -635,4 +638,32 @@ func (t *tor) PrioritizeEnds(i int) {
 func (t *tor) Private() bool {
 	info := t.t.Info()
 	return info != nil && info.Private != nil && *info.Private
+}
+
+// StreamWindow downloads a file in playback order, like WebTorrent or qBittorrent's sequential mode: the window
+// after the first incomplete piece is high priority, pieces beyond it wait until the window reaches them.
+func (t *tor) StreamWindow(i int, window int64) {
+	if t.t.Info() == nil {
+		return
+	}
+	fs := t.t.Files()
+	if i < 0 || i >= len(fs) {
+		return
+	}
+	b, e := fs[i].BeginPieceIndex(), fs[i].EndPieceIndex()
+	first := b
+	for first < e && t.t.Piece(first).State().Complete {
+		first++
+	}
+	n := max(1, int(window/t.t.Info().PieceLength))
+	for p := first; p < e; p++ {
+		switch pr := t.t.Piece(p).State().Priority; {
+		case p < first+n && pr < torrent.PiecePriorityHigh:
+			t.t.Piece(p).SetPriority(torrent.PiecePriorityHigh)
+		case p >= first+n && pr == torrent.PiecePriorityNormal:
+			// Beyond the window: wait, or the library requests these alongside the window and playback stalls.
+			// A player seeking there still gets them (reader priority), and the window reaches them in turn.
+			t.t.Piece(p).SetPriority(torrent.PiecePriorityNone)
+		}
+	}
 }
