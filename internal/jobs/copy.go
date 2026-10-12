@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sadatdaniel/download_me_not/internal/rclone"
@@ -24,6 +25,7 @@ type Dest struct {
 
 type CopyRequest struct {
 	Path   string `json:"path" doc:"file or folder inside the download folder"`
+	User   string `json:"-"` // set by the API; Path is inside this user's folder
 	Dest   string `json:"dest,omitempty" doc:"destination provider, default gdrive"`
 	Move   bool   `json:"move,omitempty" doc:"delete the local copy after the upload is verified"`
 	Folder string `json:"folder,omitempty" doc:"destination folder; default from the provider settings"`
@@ -44,6 +46,9 @@ func (m *Manager) AddCopy(r CopyRequest) (store.Job, error) {
 		return store.Job{}, fmt.Errorf("the %s provider is switched off", r.Dest)
 	}
 	rel := path.Clean("/" + filepath.ToSlash(r.Path))[1:]
+	if rel != "" && r.User != "" {
+		rel = path.Join(userDir(r.User), rel)
+	}
 	if rel == "" {
 		return store.Job{}, errors.New("copy a file or folder, not the whole download folder")
 	}
@@ -58,7 +63,7 @@ func (m *Manager) AddCopy(r CopyRequest) (store.Job, error) {
 	}
 	now := time.Now().Unix()
 	j := store.Job{ID: newID(), Kind: "copy", Source: rel, Mode: "standard", Want: "running", State: "queued",
-		Name: fi.Name(), Path: rel, Total: -1, Created: now, Updated: now}
+		Name: fi.Name(), Path: rel, Total: -1, Created: now, Updated: now, User: r.User}
 	j.Meta, _ = json.Marshal(copyMeta{Dest: r.Dest, Move: r.Move, Folder: r.Folder})
 	if err := store.InsertJob(m.o.DB, j); err != nil {
 		return store.Job{}, err
@@ -86,7 +91,7 @@ func (m *Manager) runCopy(ctx context.Context, r *runner, j store.Job) error {
 	r.mu.Unlock()
 	store.SetJob(m.o.DB, j.ID, map[string]any{"state": "uploading"})
 	var last time.Time
-	tok, err := d.Runner.Copy(ctx, d.Remote, filepath.Join(m.o.Downloads, filepath.FromSlash(j.Source)), path.Join(folder, j.Source), meta.Move,
+	tok, err := d.Runner.Copy(ctx, d.Remote, filepath.Join(m.o.Downloads, filepath.FromSlash(j.Source)), path.Join(folder, strings.TrimPrefix(j.Source, userDir(j.User)+"/")), meta.Move,
 		func(done, total int64) {
 			r.mu.Lock()
 			r.vdone, r.vtotal = done, total
@@ -111,11 +116,13 @@ func (m *Manager) runCopy(ctx context.Context, r *runner, j store.Job) error {
 }
 
 // queueDriveCopy runs the Drive step of the post-completion pipeline.
-func (m *Manager) queueDriveCopy(r *runner, p *Post, rel string) {
+// rel is the job path (with the user's folder); the copy request wants it inside that folder.
+func (m *Manager) queueDriveCopy(r *runner, p *Post, rel, user string) {
 	if p == nil || !p.Drive || rel == "" {
 		return
 	}
-	if _, err := m.AddCopy(CopyRequest{Path: rel, Move: p.DeleteLocal}); err != nil {
+	inUser := strings.TrimPrefix(rel, userDir(user)+"/")
+	if _, err := m.AddCopy(CopyRequest{Path: inUser, Move: p.DeleteLocal, User: user}); err != nil {
 		r.mu.Lock()
 		r.reason = "drive copy not queued: " + err.Error()
 		r.mu.Unlock()

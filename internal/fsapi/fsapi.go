@@ -21,9 +21,10 @@ import (
 )
 
 type FS struct {
-	root *os.Root
-	dir  string
-	key  []byte
+	root  *os.Root
+	dir   string
+	key   []byte
+	scope string // mixed into signatures: a user's links never open another user's files
 }
 
 type Entry struct {
@@ -45,6 +46,15 @@ func New(dir string, signKey []byte) (*FS, error) {
 		return nil, err
 	}
 	return &FS{root: r, dir: dir, key: signKey}, nil
+}
+
+// NewScoped is New for one user's folder: its signed links carry scope and verify only here.
+func NewScoped(dir string, signKey []byte, scope string) (*FS, error) {
+	f, err := New(dir, signKey)
+	if f != nil {
+		f.scope = scope
+	}
+	return f, err
 }
 
 func (f *FS) Close() error { return f.root.Close() }
@@ -209,7 +219,9 @@ func (f *FS) Verify(p, exp, sig string) bool {
 
 func (f *FS) mac(c, exp string) string {
 	m := hmac.New(sha256.New, f.key)
-	m.Write([]byte(c + "\x00" + exp))
+	for _, part := range []string{f.scope, c, exp} { // NUL-separated: scope, path, expiry
+		m.Write(append([]byte(part), 0))
+	}
 	return hex.EncodeToString(m.Sum(nil))
 }
 

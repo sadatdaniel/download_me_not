@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -174,6 +175,8 @@ type AddRequest struct {
 	// Format makes it a video job (yt-dlp): a preset (best, 1080p, 720p, 480p, m4a, opus, mp3) or a
 	// format id from /v1/probe. Without it, a URL that turns out to be a web page becomes a video job.
 	Format string `json:"format,omitempty"`
+	// User owns the job; set by the API from the signed-in user, never by the client. Empty = no users yet.
+	User string `json:"-"`
 }
 
 // Add creates a job. Adding a torrent that already has a job returns that job and true.
@@ -185,7 +188,7 @@ func (m *Manager) Add(r AddRequest) (store.Job, bool, error) {
 		return store.Job{}, false, fmt.Errorf("mode must be standard or stream")
 	}
 	now := time.Now().Unix()
-	j := store.Job{ID: newID(), Mode: r.Mode, Want: "running", State: "queued", Total: -1, Priority: r.Priority, Created: now, Updated: now}
+	j := store.Job{ID: newID(), Mode: r.Mode, Want: "running", State: "queued", Total: -1, Priority: r.Priority, Created: now, Updated: now, User: r.User}
 	var meta any
 	switch {
 	case len(r.Torrent) > 0 || strings.HasPrefix(r.Source, "magnet:"):
@@ -198,6 +201,11 @@ func (m *Manager) Add(r AddRequest) (store.Job, bool, error) {
 			return store.Job{}, false, err
 		}
 		if old, err := store.JobByInfoHash(m.o.DB, ih); err == nil {
+			if old.User != r.User {
+				// ponytail: the engine holds one copy per torrent, so two accounts can't have it at once; share
+				// or copy the data when this comes up.
+				return store.Job{}, false, ErrBusyElsewhere
+			}
 			return old, true, nil
 		}
 		j.Kind, j.InfoHash, j.Source = "torrent", ih, r.Source
@@ -556,7 +564,7 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 			return m.runVideo(ctx, r, j)
 		}
 		meta.HTTP = &st
-		if path, err = m.unique(st.Name); err != nil {
+		if path, err = m.unique(userDir(j.User), st.Name); err != nil {
 			return err
 		}
 		if err := save(map[string]any{"name": st.Name, "path": path, "total": st.Size}); err != nil {
@@ -595,7 +603,7 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 	}
 	final := path
 	if _, err := os.Lstat(filepath.Join(m.o.Downloads, final)); err == nil {
-		if final, err = m.unique(meta.HTTP.Name); err != nil {
+		if final, err = m.unique(userDir(j.User), meta.HTTP.Name); err != nil {
 			return err
 		}
 	}
@@ -606,14 +614,18 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 		return err
 	}
 	m.removeFiles(m.postProcess(ctx, r, j.ID, meta.Post, []string{final}))
-	m.queueDriveCopy(r, m.post(meta.Post), final)
+	m.queueDriveCopy(r, m.post(meta.Post), final, j.User)
 	return nil
 }
 
 // unique picks a free name in the download folder: "a.mp4", "a (1).mp4", ...
 // ponytail: two jobs probing the same name in the same instant could pick it twice; the final
-// rename re-checks, so the worst case is a " (n)" suffix decided late.
-func (m *Manager) unique(name string) (string, error) {
+// rename re-checks, so the worst case is a " (n)" suffix decided late. dir is the user's folder ("" = top level);
+// the result includes it.
+func (m *Manager) unique(dir, name string) (string, error) {
+	if err := os.MkdirAll(filepath.Join(m.o.Downloads, filepath.FromSlash(dir)), 0o755); err != nil {
+		return "", err
+	}
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
 	for i := 0; i < 1000; i++ {
@@ -621,6 +633,7 @@ func (m *Manager) unique(name string) (string, error) {
 		if i > 0 {
 			n = fmt.Sprintf("%s (%d)%s", base, i, ext)
 		}
+		n = path.Join(dir, n)
 		_, e1 := os.Lstat(filepath.Join(m.o.Downloads, n))
 		_, e2 := os.Lstat(filepath.Join(m.o.Downloads, n+".part"))
 		if os.IsNotExist(e1) && os.IsNotExist(e2) {
@@ -657,7 +670,7 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 	if len(src) == 0 {
 		src = []byte(meta.Magnet)
 	}
-	t, _, err := eng.Add(src)
+	t, _, err := eng.AddIn(src, m.userAbs(j.User))
 	if err != nil {
 		return err
 	}
@@ -687,7 +700,7 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 	if m.o.LearnTrackers && !t.Private() {
 		m.addLearnedTrackers(t)
 	}
-	f := map[string]any{"name": t.Name(), "path": t.Name(), "total": total}
+	f := map[string]any{"name": t.Name(), "path": path.Join(userDir(j.User), t.Name()), "total": total}
 	if meta.Started {
 		store.SetJob(m.o.DB, j.ID, map[string]any{"state": "checking"})
 		if err := t.Recheck(ctx); err != nil { // spike: progress reads 0 after a restart until rechecked
@@ -731,8 +744,8 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 			del := m.postProcess(ctx, r, j.ID, meta.Post, paths)
 			err := m.seed(ctx, r, j.ID, t, total, meta.Seed)
 			if err == nil {
-				m.removeFiles(del)                               // only after seeding: peers may still need the archive
-				m.queueDriveCopy(r, m.post(meta.Post), t.Name()) // also after seeding: a move must not pull files from under peers
+				m.removeFiles(del)                                                                   // only after seeding: peers may still need the archive
+				m.queueDriveCopy(r, m.post(meta.Post), path.Join(userDir(j.User), t.Name()), j.User) // also after seeding: a move must not pull files from under peers
 			}
 			return err
 		case <-ctx.Done():
@@ -1038,4 +1051,22 @@ func (m *Manager) maybeRetry(j store.Job) {
 		"state": "queued",
 		"error": fmt.Sprintf("retry %d of %d after: %s", n+1, len(retryAfter), j.Error),
 	})
+}
+
+// ErrBusyElsewhere: the same torrent is already running in another user's account.
+var ErrBusyElsewhere = errors.New("this torrent is already downloading in another account on this server; try again when it has finished")
+
+// userDir is a user's folder inside the download folder ("" when the server has no users yet).
+func userDir(user string) string {
+	if user == "" {
+		return ""
+	}
+	return "users/" + user
+}
+
+// UserDir is the same for other packages (the API opens each user's folder with it).
+func UserDir(user string) string { return userDir(user) }
+
+func (m *Manager) userAbs(user string) string {
+	return filepath.Join(m.o.Downloads, filepath.FromSlash(userDir(user)))
 }

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -55,5 +56,69 @@ func TestLearnedTrackers(t *testing.T) {
 	ForgetTrackers(db)
 	if top, _ := TopTrackers(db, 10); len(top) != 0 {
 		t.Fatal("not forgotten")
+	}
+}
+
+func TestUsers(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "u.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	InsertJob(db, Job{ID: "old", Kind: "web", Want: "running", State: "done", Created: 1, Updated: 1})
+
+	if _, err := CreateUser(db, "Sadat", "12a4"); err != ErrPINShape {
+		t.Fatalf("bad PIN accepted: %v", err)
+	}
+	a, err := CreateUser(db, "Sadat", "1234")
+	if err != nil || !a.Owner {
+		t.Fatalf("first user: %+v %v", a, err)
+	}
+	if j, _ := GetJob(db, "old"); j.User != a.ID {
+		t.Fatalf("first user did not inherit the old job: %q", j.User)
+	}
+	b, err := CreateUser(db, "Wife", "9876")
+	if err != nil || b.Owner {
+		t.Fatalf("second user: %+v %v", b, err)
+	}
+	if _, err := CreateUser(db, "wife", "1111"); err == nil {
+		t.Fatal("duplicate name (case-insensitive) accepted")
+	}
+	if us, _ := ListUsers(db); len(us) != 2 || us[0].Name != "Sadat" {
+		t.Fatalf("list: %+v", us)
+	}
+
+	if _, err := CheckPIN(db, b.ID, "9876"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 4; i++ {
+		if _, err := CheckPIN(db, b.ID, "0000"); err != ErrBadPIN {
+			t.Fatalf("try %d: %v", i, err)
+		}
+	}
+	if _, err := CheckPIN(db, b.ID, "0000"); !errors.As(err, new(ErrLocked)) {
+		t.Fatalf("5th wrong PIN must lock: %v", err)
+	}
+	if _, err := CheckPIN(db, b.ID, "9876"); !errors.As(err, new(ErrLocked)) {
+		t.Fatalf("locked user accepted the right PIN: %v", err)
+	}
+	if err := SetPIN(db, b.ID, "4321"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckPIN(db, b.ID, "4321"); err != nil {
+		t.Fatalf("new PIN after reset: %v", err)
+	}
+
+	BindDevice(db, "tokhash", b.ID)
+	if u, _ := DeviceUser(db, "tokhash"); u != b.ID {
+		t.Fatalf("bound user: %q", u)
+	}
+	BindDevice(db, "tokhash", a.ID)
+	if u, _ := DeviceUser(db, "tokhash"); u != a.ID {
+		t.Fatalf("rebind: %q", u)
+	}
+	DeleteUser(db, a.ID)
+	if u, _ := DeviceUser(db, "tokhash"); u != "" {
+		t.Fatalf("binding survived the user: %q", u)
 	}
 }

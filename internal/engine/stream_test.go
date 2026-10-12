@@ -195,3 +195,50 @@ func TestSkipFile(t *testing.T) {
 		t.Fatalf("skipped file downloaded %d of %d bytes", b.Completed, b.Length)
 	}
 }
+
+// AddIn keeps a torrent's data in its own folder (one per user), not in the engine's data directory.
+func TestAddInFolder(t *testing.T) {
+	sdir := t.TempDir()
+	os.WriteFile(filepath.Join(sdir, "film.bin"), bytes.Repeat([]byte("frame"), 200000), 0o644)
+	info := metainfo.Info{PieceLength: 64 << 10}
+	if err := info.BuildFromFilePath(filepath.Join(sdir, "film.bin")); err != nil {
+		t.Fatal(err)
+	}
+	ib, _ := bencode.Marshal(info)
+	var mi bytes.Buffer
+	(&metainfo.MetaInfo{InfoBytes: ib}).Write(&mi)
+	seeder := newEngine(t, sdir)
+	st, _, _ := seeder.Add(mi.Bytes())
+	if err := st.Recheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	leecher := newEngine(t, root)
+	userDir := filepath.Join(root, "users", "u1")
+	lt, isNew, err := leecher.AddIn(mi.Bytes(), userDir)
+	if err != nil || !isNew {
+		t.Fatalf("AddIn: %v %v", isNew, err)
+	}
+	lt.(*tor).t.AddClientPeer(seeder.cl)
+	lt.Start()
+	select {
+	case <-lt.Done():
+	case <-time.After(20 * time.Second):
+		t.Fatalf("incomplete: %+v", lt.Stats())
+	}
+	if _, err := os.Stat(filepath.Join(userDir, "film.bin")); err != nil {
+		t.Fatalf("not in the user's folder: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "film.bin")); !os.IsNotExist(err) {
+		t.Fatal("also written to the engine's data directory")
+	}
+	if got, ok := leecher.Get(lt.InfoHash()); !ok || got.(*tor).dataDir != userDir {
+		t.Fatal("Get lost the torrent's folder")
+	}
+	if err := lt.Drop(true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(userDir, "film.bin")); !os.IsNotExist(err) {
+		t.Fatal("Drop(true) left the file in the user's folder")
+	}
+}

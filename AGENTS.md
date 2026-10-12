@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Self-hosted download server (web links, video sites via yt-dlp, torrents) with a folder/streaming API, a CLI, and later an Android app. One static Go binary. Single user.
+Self-hosted download server (web links, video sites via yt-dlp, torrents) with a folder/streaming API, a CLI, and later an Android app. One static Go binary. A household server: several users (name + 4-digit PIN), each strictly separate.
 
 - **Spec:** [docs/scope.md](docs/scope.md) is the source of truth. Section 17 is the decision log, and section 19 holds the verified answers.
 - **Architecture:** [docs/architecture.md](docs/architecture.md) is the breakage map and self-healing rules. Read it before designing anything new.

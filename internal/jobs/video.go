@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -34,7 +35,10 @@ func (m *Manager) runVideo(ctx context.Context, r *runner, j store.Job) error {
 	r.mu.Unlock()
 	store.SetJob(m.o.DB, j.ID, map[string]any{"state": "downloading"})
 	var last time.Time
-	file, err := vr.Download(ctx, j.Source, meta.Format, m.o.Downloads, func(done, total int64) {
+	if err := os.MkdirAll(m.userAbs(j.User), 0o755); err != nil {
+		return err
+	}
+	file, err := vr.Download(ctx, j.Source, meta.Format, m.userAbs(j.User), func(done, total int64) {
 		r.mu.Lock()
 		r.vdone, r.vtotal = done, total
 		r.mu.Unlock()
@@ -53,7 +57,7 @@ func (m *Manager) runVideo(ctx context.Context, r *runner, j store.Job) error {
 	if err := store.SetJob(m.o.DB, j.ID, map[string]any{"name": filepath.Base(file), "path": rel, "done": done, "total": done}); err != nil {
 		return err
 	}
-	m.queueDriveCopy(r, m.post(nil), rel)
+	m.queueDriveCopy(r, m.post(nil), filepath.ToSlash(rel), j.User)
 	return nil
 }
 

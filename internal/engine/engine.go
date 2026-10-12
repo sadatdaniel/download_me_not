@@ -28,6 +28,7 @@ import (
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/iplist"
 	"github.com/anacrolix/torrent/metainfo"
+	"github.com/anacrolix/torrent/storage"
 	"golang.org/x/net/proxy"
 	"golang.org/x/time/rate"
 )
@@ -35,6 +36,8 @@ import (
 type Engine interface {
 	// Add takes a magnet URI or .torrent bytes. Adding a known infohash returns the existing torrent and false.
 	Add(magnetOrTorrent []byte) (Torrent, bool, error)
+	// AddIn is Add with the data kept in dir (a user's folder) instead of the engine's data directory.
+	AddIn(magnetOrTorrent []byte, dir string) (Torrent, bool, error)
 	Get(infohash string) (Torrent, bool)
 	Port() int // listening port for peers (for doctor and firewall hints)
 	// PeerCounts: peers connected now, how many of them dialled us, and when that last happened. An incoming
@@ -160,6 +163,10 @@ type engine struct {
 	nodesFile     string
 	noUDPTrackers bool         // proxy mode
 	lastIncoming  atomic.Int64 // unix seconds when a peer last connected to us (proof the port is reachable)
+
+	mu       sync.Mutex
+	dirs     map[string]string                   // infohash → folder, for torrents added with AddIn
+	storages map[string]storage.ClientImplCloser // one per folder: each keeps a piece-completion database there
 }
 
 func New(o Options) (Engine, error) {
@@ -254,7 +261,8 @@ func New(o Options) (Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	e := &engine{cl: cl, dataDir: o.DataDir, nodesFile: o.DHTNodesFile, noUDPTrackers: socks != nil}
+	e := &engine{cl: cl, dataDir: o.DataDir, nodesFile: o.DHTNodesFile, noUDPTrackers: socks != nil,
+		dirs: map[string]string{}, storages: map[string]storage.ClientImplCloser{}}
 	if socks != nil {
 		cl.AddDialer(torrent.NetworkDialer{Network: "tcp", Dialer: socks})
 	}
@@ -268,19 +276,19 @@ func New(o Options) (Engine, error) {
 	return e, nil
 }
 
-func (e *engine) Add(b []byte) (_ Torrent, isNew bool, err error) {
+func (e *engine) Add(b []byte) (Torrent, bool, error) { return e.AddIn(b, "") }
+
+func (e *engine) AddIn(b []byte, dir string) (_ Torrent, isNew bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("adding torrent: %v", r)
 		}
 	}()
-	var t *torrent.Torrent
+	var spec *torrent.TorrentSpec
 	if bytes.HasPrefix(b, []byte("magnet:")) {
-		before := len(e.cl.Torrents())
-		if t, err = e.cl.AddMagnet(string(b)); err != nil {
+		if spec, err = torrent.TorrentSpecFromMagnetUri(string(b)); err != nil {
 			return nil, false, err
 		}
-		isNew = len(e.cl.Torrents()) > before
 	} else {
 		mi, err := metainfo.Load(bytes.NewReader(b))
 		if err != nil {
@@ -293,15 +301,29 @@ func (e *engine) Add(b []byte) (_ Torrent, isNew bool, err error) {
 		if !info.HasV1() {
 			return nil, false, ErrV2Only
 		}
-		spec, err := torrent.TorrentSpecFromMetaInfoErr(mi)
-		if err != nil {
-			return nil, false, err
-		}
-		if t, isNew, err = e.cl.AddTorrentSpec(spec); err != nil {
+		if spec, err = torrent.TorrentSpecFromMetaInfoErr(mi); err != nil {
 			return nil, false, err
 		}
 	}
-	tt := &tor{t: t, dataDir: e.dataDir, noUDP: e.noUDPTrackers}
+	dataDir := e.dataDir
+	if dir != "" && dir != e.dataDir {
+		dataDir = dir
+		if _, known := e.cl.Torrent(spec.InfoHash); !known { // storage only applies to a new torrent
+			if spec.Storage, err = e.storageFor(dir); err != nil {
+				return nil, false, err
+			}
+		}
+	}
+	t, isNew, err := e.cl.AddTorrentSpec(spec)
+	if err != nil {
+		return nil, false, err
+	}
+	if isNew {
+		e.mu.Lock()
+		e.dirs[t.InfoHash().HexString()] = dataDir
+		e.mu.Unlock()
+	}
+	tt := &tor{t: t, dataDir: e.dirOf(t.InfoHash().HexString()), noUDP: e.noUDPTrackers}
 	if tt.noUDP {
 		tt.SetTrackers(tt.Trackers()) // drops udp:// trackers in proxy mode
 	}
@@ -317,7 +339,7 @@ func (e *engine) Get(infohash string) (Torrent, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &tor{t: t, dataDir: e.dataDir, noUDP: e.noUDPTrackers}, true
+	return &tor{t: t, dataDir: e.dirOf(t.InfoHash().HexString()), noUDP: e.noUDPTrackers}, true
 }
 
 func (e *engine) Port() int { return e.cl.LocalPort() }
@@ -352,7 +374,13 @@ func (e *engine) Close() error {
 			}
 		}
 	}
-	return errors.Join(append(errs, e.cl.Close()...)...)
+	errs = append(errs, e.cl.Close()...)
+	e.mu.Lock()
+	for _, s := range e.storages {
+		errs = append(errs, s.Close())
+	}
+	e.mu.Unlock()
+	return errors.Join(errs...)
 }
 
 type tor struct {
@@ -736,4 +764,29 @@ func (t *tor) fileRange(i int) (b, e int, ok bool) {
 		return 0, 0, false
 	}
 	return fs[i].BeginPieceIndex(), fs[i].EndPieceIndex(), true
+}
+
+// storageFor returns the storage client for a folder, creating it once.
+func (e *engine) storageFor(dir string) (storage.ClientImplCloser, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if s, ok := e.storages[dir]; ok {
+		return s, nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	s := storage.NewFileOpts(storage.NewFileClientOpts{ClientBaseDir: dir})
+	e.storages[dir] = s
+	return s, nil
+}
+
+// dirOf is where a torrent's data lives: its AddIn folder, or the engine's data directory.
+func (e *engine) dirOf(infohash string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if d, ok := e.dirs[infohash]; ok {
+		return d
+	}
+	return e.dataDir
 }

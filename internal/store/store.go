@@ -112,16 +112,17 @@ type Job struct {
 	Error    string          `json:"error,omitempty"`
 	Created  int64           `json:"created"`
 	Updated  int64           `json:"updated"`
-	Meta     json.RawMessage `json:"-"` // kind-specific resume state
+	User     string          `json:"user,omitempty"` // owning user id (empty before users existed)
+	Meta     json.RawMessage `json:"-"`              // kind-specific resume state
 }
 
-const jobCols = `id, kind, source, mode, want, state, name, path, infohash, done, total, priority, error, meta, created, updated`
+const jobCols = `id, kind, source, mode, want, state, name, path, infohash, done, total, priority, error, meta, created, updated, user_id`
 
 func scanJob(r interface{ Scan(...any) error }) (Job, error) {
 	var j Job
 	var meta string
 	err := r.Scan(&j.ID, &j.Kind, &j.Source, &j.Mode, &j.Want, &j.State, &j.Name, &j.Path, &j.InfoHash,
-		&j.Done, &j.Total, &j.Priority, &j.Error, &meta, &j.Created, &j.Updated)
+		&j.Done, &j.Total, &j.Priority, &j.Error, &meta, &j.Created, &j.Updated, &j.User)
 	j.Meta = json.RawMessage(meta)
 	return j, err
 }
@@ -155,8 +156,8 @@ func InsertJob(db *sql.DB, j Job) error {
 	if len(j.Meta) == 0 {
 		j.Meta = json.RawMessage("{}")
 	}
-	_, err := db.Exec(`INSERT INTO jobs (`+jobCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		j.ID, j.Kind, j.Source, j.Mode, j.Want, j.State, j.Name, j.Path, j.InfoHash, j.Done, j.Total, j.Priority, j.Error, string(j.Meta), j.Created, j.Updated)
+	_, err := db.Exec(`INSERT INTO jobs (`+jobCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		j.ID, j.Kind, j.Source, j.Mode, j.Want, j.State, j.Name, j.Path, j.InfoHash, j.Done, j.Total, j.Priority, j.Error, string(j.Meta), j.Created, j.Updated, j.User)
 	return err
 }
 

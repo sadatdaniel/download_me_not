@@ -169,3 +169,19 @@ func TestMedia(t *testing.T) {
 		t.Fatalf("limit: %d", len(es))
 	}
 }
+
+func TestScopedSignatures(t *testing.T) {
+	key := []byte("k")
+	a, _ := NewScoped(t.TempDir(), key, "user-a")
+	b, _ := NewScoped(t.TempDir(), key, "user-b")
+	defer a.Close()
+	defer b.Close()
+	q, _ := a.Sign("/film.mkv", time.Hour)
+	v, _ := url.ParseQuery(q)
+	if !a.Verify("/film.mkv", v.Get("exp"), v.Get("sig")) {
+		t.Fatal("own link rejected")
+	}
+	if b.Verify("/film.mkv", v.Get("exp"), v.Get("sig")) {
+		t.Fatal("another user's link opened this user's file")
+	}
+}
