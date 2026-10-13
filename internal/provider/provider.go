@@ -4,6 +4,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -103,6 +104,8 @@ type Registry struct {
 	enabled  map[string]bool
 	settings map[string]map[string]any
 	dataDir  string
+	// Tools installs missing helper tools when a provider needs them; nil = only report them missing.
+	Tools *tools.OnDemand
 }
 
 // Settings is the per-provider config as loaded from the config file.
@@ -149,7 +152,7 @@ func (r *Registry) status(d def, enabled bool) (Status, string) {
 		}
 	}
 	if len(missing) > 0 {
-		return MissingTool, strings.Join(missing, ", ") + " not found; run `dmn doctor`"
+		return MissingTool, r.missing(missing)
 	}
 	var soft []string
 	for _, t := range d.Optional {
@@ -296,4 +299,21 @@ func (r *Registry) Restart(name, key string) bool {
 var softEffect = map[string]string{
 	"deno":   "YouTube may offer fewer formats or refuse some videos",
 	"ffmpeg": "best-quality formats with separate video and audio cannot be merged (install it: sudo apt-get install ffmpeg)",
+}
+
+// missing starts installing missing tools (when the server manages them) and says what is happening.
+func (r *Registry) missing(names []string) string {
+	if r.Tools == nil || r.Tools.Inst == nil {
+		return strings.Join(names, ", ") + " not found; run `dmn doctor`"
+	}
+	var parts []string
+	for _, n := range names {
+		r.Tools.Ensure(context.Background(), n, 0) // starts the install once; a running one is left alone
+		if _, failed := r.Tools.State(n); failed != "" {
+			parts = append(parts, "installing "+n+" failed: "+failed)
+		} else {
+			parts = append(parts, "installing "+n+" on the server (about a minute)")
+		}
+	}
+	return strings.Join(parts, "; ")
 }

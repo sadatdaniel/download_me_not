@@ -123,7 +123,7 @@ func (m *Manager) withCookies(src, user string, h http.Header) {
 func (m *Manager) videoRunner(src, user string) (*video.Runner, func(), error) {
 	vr := m.o.Video()
 	if vr == nil {
-		return nil, nil, errors.New("yt-dlp is not installed: run `dmn doctor`")
+		return nil, nil, errors.New("yt-dlp could not be installed on the server (it is installed automatically; see `dmn doctor`)")
 	}
 	r := *vr
 	done := func() {}

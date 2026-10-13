@@ -159,6 +159,13 @@ func serveCmd() *cobra.Command {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		reg := provider.NewRegistry(pcfg, cfg.Paths.Data)
+		inst := &tools.Installer{Client: netguard.Client(), DataDir: cfg.Paths.Data}
+		// Missing helper tools are installed the moment a feature needs them (unless tool management is off).
+		od := &tools.OnDemand{Dir: cfg.Paths.Data}
+		if cfg.Updates.Tools != "off" {
+			od.Inst = inst
+		}
+		reg.Tools = od
 		// The torrent engine starts with the first torrent job, so a server that only does web
 		// downloads never opens a torrent port or joins the DHT.
 		// The cookie key sits next to the config file, apart from the data folder (scope §5.6).
@@ -185,11 +192,10 @@ func serveCmd() *cobra.Command {
 				Ratio: settingFloat(cfg, "torrent", "seedRatio", 1), Minutes: setting(cfg, "torrent", "seedMinutes", 60)},
 			NewEngine:   func() (engine.Engine, error) { return newEngine(cfg, lim, bl) },
 			TorrentGate: killSwitch(settingStr(cfg, "torrent", "bind", "")),
-			Video:       videoRunner(ctx, cfg.Paths.Data),
+			Video:       videoRunner(ctx, cfg.Paths.Data, od),
 			Cookies:     ck,
-			Destination: destinations(cfg, reg, box),
+			Destination: destinations(cfg, reg, box, od),
 		})
-		inst := &tools.Installer{Client: netguard.Client(), DataDir: cfg.Paths.Data}
 		if cfg.Updates.Tools != "off" {
 			go maintainTools(ctx, inst, reg)
 		}
@@ -1118,7 +1124,7 @@ func learnedCmd() *cobra.Command {
 
 // videoRunner starts the SSRF-guarded proxy that yt-dlp must use (it makes its own connections)
 // and returns a lookup that finds yt-dlp, ffmpeg and deno at the time of each job.
-func videoRunner(ctx context.Context, dataDir string) func() *video.Runner {
+func videoRunner(ctx context.Context, dataDir string, od *tools.OnDemand) func() *video.Runner {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "video: no proxy, video downloads disabled:", err)
@@ -1129,10 +1135,11 @@ func videoRunner(ctx context.Context, dataDir string) func() *video.Runner {
 	go func() { <-ctx.Done(); px.Close() }()
 	proxyURL := "http://" + ln.Addr().String()
 	return func() *video.Runner {
-		bin, ok := tools.Find("yt-dlp", dataDir)
-		if !ok {
+		bin, err := od.Ensure(context.Background(), "yt-dlp", 3*time.Minute) // installs it the first time
+		if err != nil {
 			return nil
 		}
+		od.Ensure(context.Background(), "deno", 0) // YouTube needs it too; starts its install if missing
 		r := &video.Runner{Bin: bin, Proxy: proxyURL}
 		if p, ok := tools.Find("ffmpeg", dataDir); ok {
 			r.FFmpeg = p
@@ -1311,14 +1318,14 @@ func httpClient(timeout time.Duration) *http.Client {
 
 // destinations builds cloud destinations from the provider settings at the time of each copy, so
 // signing in or changing the folder needs no restart.
-func destinations(cfg *config.Config, reg *provider.Registry, box *secret.Box) func(string) (*jobs.Dest, error) {
+func destinations(cfg *config.Config, reg *provider.Registry, box *secret.Box, od *tools.OnDemand) func(string) (*jobs.Dest, error) {
 	return func(name string) (*jobs.Dest, error) {
 		if name != "gdrive" {
 			return nil, fmt.Errorf("unknown destination %q", name)
 		}
-		bin, ok := tools.Find("rclone", cfg.Paths.Data)
-		if !ok {
-			return nil, fmt.Errorf("rclone is not installed: run `dmn doctor`")
+		bin, err := od.Ensure(context.Background(), "rclone", 3*time.Minute) // the first copy installs it
+		if err != nil {
+			return nil, err
 		}
 		str := func(k string) string { s, _ := reg.Setting("gdrive", k).(string); return s }
 		sec, err := box.Open("gdrive.clientSecret", str("clientSecret"))
