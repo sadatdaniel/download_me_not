@@ -230,6 +230,9 @@ func (s *Store) Delete(domain string) error {
 	return err
 }
 
+// shortLinks are share-link hosts that lead to a site: links on them get that site's cookies.
+var shortLinks = map[string]string{"youtu.be": "youtube.com"}
+
 // For returns the cookies (and saved User-Agent) that apply to rawURL, from the jar of the
 // closest stored parent domain. Only for https: cookies never travel in clear text.
 func (s *Store) For(rawURL string) ([]Cookie, string) {
@@ -238,6 +241,9 @@ func (s *Store) For(rawURL string) ([]Cookie, string) {
 		return nil, ""
 	}
 	host := strings.ToLower(u.Hostname())
+	if site, ok := shortLinks[host]; ok {
+		host = site // a share link opens the site, signed in with the site's cookies
+	}
 	now := time.Now().Unix()
 	for d := host; strings.Contains(d, "."); d = d[strings.Index(d, ".")+1:] {
 		j, err := s.load(d)

@@ -89,6 +89,9 @@ func TestPerUser(t *testing.T) {
 	if cs, _ := a.For("https://www.youtube.com/watch"); len(cs) != 1 {
 		t.Fatalf("Alice's own cookies: %v", cs)
 	}
+	if cs, _ := a.For("https://youtu.be/l5OZu"); len(cs) != 1 {
+		t.Fatalf("a youtu.be share link must get the youtube.com cookies: %v", cs)
+	}
 	if cs, _ := b.For("https://www.youtube.com/watch"); len(cs) != 0 {
 		t.Fatal("Bob's downloads would use Alice's cookies")
 	}
