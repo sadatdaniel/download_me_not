@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -539,6 +540,8 @@ func (m *Manager) finish(ctx context.Context, id string, err error) {
 		}
 	default:
 		f["state"], f["error"] = "failed", err.Error()
+		// For the owner's journalctl: job id, kind and the error (yt-dlp errors may name the video id).
+		log.Printf("job %s (%s) failed: %v", id, j.Kind, err)
 	}
 	store.SetJob(m.o.DB, id, f)
 }

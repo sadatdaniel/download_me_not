@@ -48,13 +48,15 @@ type Preset struct {
 }
 
 var Presets = []Preset{
+	// Each ends with a fallback that always exists: sites (YouTube for requests from servers especially) sometimes
+	// offer only combined video+audio files, and a choice must not fail just because its first pick is missing.
 	{Name: "best", Format: "bv*+ba/b"},
-	{Name: "1080p", Format: "bv*[height<=1080]+ba/b[height<=1080]"},
-	{Name: "720p", Format: "bv*[height<=720]+ba/b[height<=720]"},
-	{Name: "480p", Format: "bv*[height<=480]+ba/b[height<=480]"},
-	{Name: "m4a", Format: "ba[ext=m4a]/ba", Audio: "m4a"},
-	{Name: "opus", Format: "ba[acodec=opus]/ba", Audio: "opus"},
-	{Name: "mp3", Format: "ba", Audio: "mp3"},
+	{Name: "1080p", Format: "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"},
+	{Name: "720p", Format: "bv*[height<=720]+ba/b[height<=720]/bv*+ba/b"},
+	{Name: "480p", Format: "bv*[height<=480]+ba/b[height<=480]/bv*+ba/b"},
+	{Name: "m4a", Format: "ba[ext=m4a]/ba/b", Audio: "m4a"}, // b: the audio is taken out of a combined file
+	{Name: "opus", Format: "ba[acodec=opus]/ba/b", Audio: "opus"},
+	{Name: "mp3", Format: "ba/b", Audio: "mp3"},
 }
 
 // Runner holds how to call yt-dlp.

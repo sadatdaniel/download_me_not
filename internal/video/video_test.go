@@ -111,3 +111,13 @@ func TestOptions(t *testing.T) {
 		}
 	}
 }
+
+// Every preset ends in a fallback that any site offers (a combined file), so a choice never fails only
+// because its first pick is missing.
+func TestPresetsFallBack(t *testing.T) {
+	for _, p := range Presets {
+		if !strings.HasSuffix(p.Format, "/b") {
+			t.Errorf("%s: %q has no fallback to a combined file", p.Name, p.Format)
+		}
+	}
+}
