@@ -62,4 +62,10 @@ sh /src/scripts/install.sh --uninstall --purge >/dev/null
 [ ! -e /etc/dmn ] && [ ! -e /var/lib/dmn ] || fail "purge left config or data"
 [ -f /srv/dmn/downloads/keep.me ] || fail "purge removed the download folder"
 ok "uninstall keeps config; purge removes it but never downloads"
+
+# No terminal and no --yes (cloud-init, CI, a pipe): no questions, no abort, a hint instead.
+sh /src/scripts/install.sh --from "$W/rel" --no-start < /dev/null > out3.txt 2>&1 || { cat out3.txt; fail "install without a terminal"; }
+grep -q "no user yet" out3.txt || fail "no hint to add a user"
+sh /src/scripts/install.sh --uninstall --purge >/dev/null
+ok "install without a terminal asks nothing and explains how to add a user"
 echo "ALL INSTALLER TESTS PASSED"

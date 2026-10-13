@@ -201,7 +201,8 @@ else
 fi
 
 # The first user (the owner). Questions go to /dev/tty: with `curl | sudo sh`, stdin is the script.
-has_tty() { [ "$YES" -eq 0 ] && { : </dev/tty; } 2>/dev/null; }
+# A subshell: in POSIX sh a failed redirection on a special builtin would end the whole script.
+has_tty() { [ "$YES" -eq 0 ] && (: </dev/tty) 2>/dev/null; }
 if [ "$FRESH" -eq 1 ] && [ -z "$FIRST_USER" ] && has_tty; then
 	printf 'Your name (the first user, who can add the others): ' >/dev/tty
 	read -r FIRST_USER </dev/tty
@@ -217,6 +218,8 @@ if [ -n "$FIRST_USER" ]; then
 		echo >/dev/tty
 	done
 	as_dmn env DMN_PIN="$FIRST_PIN" /usr/local/bin/dmn user add "$FIRST_USER" || say "warning: could not add $FIRST_USER (see above); add users later with: sudo dmn user add NAME"
+elif [ "$FRESH" -eq 1 ]; then
+	say "no user yet: add the first one (the owner) with: sudo dmn user add NAME"
 fi
 
 if has_systemd; then

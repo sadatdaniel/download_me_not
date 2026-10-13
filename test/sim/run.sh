@@ -81,6 +81,17 @@ run_pass() {
 	vm test -e /opt/dmn/bin/dmn.prev || fail "previous binary not kept"
 	ok "now $LATEST, confirmed healthy, previous version kept for rollback"
 
+	step "first user on the upgraded server (sudo dmn user add), sign in from outside"
+	as_ubuntu "sudo dmn user add Alice --pin 1234" | sed 's/^/   /' || fail "user add"
+	vm sh -c 'stat -c %U /var/lib/dmn/dmn.db*' | grep -qv '^dmn$' && fail "sudo left database files not owned by dmn"
+	UTOK=$(curl -sk --max-time 10 -H 'Content-Type: application/json' -d '{"name":"alice","pin":"1234","device":"sim"}' \
+		"https://127.0.0.1:$PORT/v1/login" | grep -o 'dmn_[A-Za-z0-9_-]*')
+	[ -n "$UTOK" ] || fail "sign-in with name and PIN"
+	curl -sk --max-time 10 -H "Authorization: Bearer $UTOK" "https://127.0.0.1:$PORT/v1/jobs" | grep -q '^\[' || fail "API as Alice"
+	code=$(curl -sk -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "https://127.0.0.1:$PORT/v1/jobs")
+	[ "$code" = 403 ] || fail "the installer token still reads downloads after a user exists ($code)"
+	ok "Alice signs in; the installer's token no longer reaches anyone's downloads"
+
 	step "reboot the VM"
 	docker restart dmn-sim >/dev/null
 	wait_for 'vm systemctl is-active --quiet dmn' 60 || fail "service not back after reboot"

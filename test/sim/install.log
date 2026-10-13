@@ -1,0 +1,11 @@
+==> verifying signature and checksum
+==> installing ffmpeg with the system package manager
+==> creating system user dmn
+==> writing /etc/dmn/config.yaml
+==> creating the owner token (shown once)
+Config: /etc/dmn/config.yaml
+Token "owner" (admin), shown once:
+
+  dmn_c27ToKWcAqCqG4H0d14Mkj0Irz_uCwLx7xHJGLwHQKI
+
+Use it with: export DMN_TOKEN=dmn_c27ToKWcAqCqG4H0d14Mkj0Irz_uCwLx7xHJGLwHQKI
