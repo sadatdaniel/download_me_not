@@ -225,6 +225,7 @@ func (s *server) routes(api huma.API) {
 		})
 	s.jobRoutes(api)
 	s.userRoutes(api)
+	s.driveRoutes(api)
 	s.cookieRoutes(api)
 	s.providerRoutes(api)
 	s.toolRoutes(api)

@@ -78,7 +78,7 @@ func (m *Manager) runCopy(ctx context.Context, r *runner, j store.Job) error {
 	if m.o.Destination == nil {
 		return errors.New("no cloud destinations configured")
 	}
-	d, err := m.o.Destination(meta.Dest)
+	d, err := m.o.Destination(meta.Dest, j.User) // the owner's own Drive
 	if err != nil {
 		return err
 	}

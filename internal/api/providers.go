@@ -15,7 +15,7 @@ import (
 // signIns holds the current Google Drive sign-in attempt (one at a time is plenty for one user).
 type signIns struct {
 	mu  sync.Mutex
-	cur *gdrive.SignIn
+	cur map[string]*gdrive.SignIn // per user: everyone connects their own Drive
 }
 
 type settingsOut struct {
@@ -70,8 +70,8 @@ func (s *server) providerRoutes(api huma.API) {
 			return out, nil
 		})
 
-	huma.Register(api, op("gdrive-signin", "POST", "/v1/providers/gdrive/signin", "admin",
-		"Connect Google Drive: returns a code to enter at the verification URL on any device"),
+	huma.Register(api, op("gdrive-signin", "POST", "/v1/providers/gdrive/signin", "write",
+		"Connect your own Google Drive: returns a code to enter at the verification URL on any device"),
 		func(ctx context.Context, _ *struct{}) (*struct {
 			Status int
 			Body   *gdrive.SignIn
@@ -88,29 +88,28 @@ func (s *server) providerRoutes(api huma.API) {
 			}
 			sctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
+			user := userOf(ctx)
 			si, err := gdrive.Start(sctx, gdrive.Client{ID: id, Secret: secret, Endpoint: ep}, func(tok string) error {
-				v := s.Secret.Seal("gdrive.token", tok)
-				if err := config.Set(s.CfgPath, "providers.gdrive.settings.token", v); err != nil {
-					return err
-				}
-				s.Providers.SetSetting("gdrive", "token", v)
-				return nil
+				return s.drive().Set(user, tok) // this user's Drive only
 			})
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
 			}
 			s.signin.mu.Lock()
-			s.signin.cur = si
+			if s.signin.cur == nil {
+				s.signin.cur = map[string]*gdrive.SignIn{}
+			}
+			s.signin.cur[user] = si
 			s.signin.mu.Unlock()
 			return &struct {
 				Status int
 				Body   *gdrive.SignIn
 			}{http.StatusAccepted, si}, nil
 		})
-	huma.Register(api, op("gdrive-signin-status", "GET", "/v1/providers/gdrive/signin", "admin", "State of the current Google Drive sign-in"),
+	huma.Register(api, op("gdrive-signin-status", "GET", "/v1/providers/gdrive/signin", "read", "State of your current Google Drive sign-in"),
 		func(ctx context.Context, _ *struct{}) (*struct{ Body gdrive.Status }, error) {
 			s.signin.mu.Lock()
-			cur := s.signin.cur
+			cur := s.signin.cur[userOf(ctx)]
 			s.signin.mu.Unlock()
 			if cur == nil {
 				return nil, huma.Error404NotFound("no sign-in started")

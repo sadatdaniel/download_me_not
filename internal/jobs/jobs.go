@@ -58,8 +58,9 @@ type Options struct {
 	// installed while the server runs is picked up.
 	Video   func() *video.Runner
 	Cookies *cookies.Store // imported browser cookies, attached to https requests; nil = none
-	// Destination returns how to reach a cloud destination (gdrive, ...) for copy jobs.
-	Destination func(name string) (*Dest, error)
+	// Destination returns how to reach a cloud destination (gdrive, ...) for a user's copy jobs: each user
+	// copies to their own account ("" = the server-wide one from before users).
+	Destination func(name, user string) (*Dest, error)
 }
 
 var (

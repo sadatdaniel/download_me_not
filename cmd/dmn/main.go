@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -194,7 +195,7 @@ func serveCmd() *cobra.Command {
 			TorrentGate: killSwitch(settingStr(cfg, "torrent", "bind", "")),
 			Video:       videoRunner(ctx, cfg.Paths.Data, od),
 			Cookies:     ck,
-			Destination: destinations(cfg, reg, box, od),
+			Destination: destinations(cfg, reg, box, od, db),
 		})
 		if cfg.Updates.Tools != "off" {
 			go maintainTools(ctx, inst, reg)
@@ -1318,8 +1319,9 @@ func httpClient(timeout time.Duration) *http.Client {
 
 // destinations builds cloud destinations from the provider settings at the time of each copy, so
 // signing in or changing the folder needs no restart.
-func destinations(cfg *config.Config, reg *provider.Registry, box *secret.Box, od *tools.OnDemand) func(string) (*jobs.Dest, error) {
-	return func(name string) (*jobs.Dest, error) {
+func destinations(cfg *config.Config, reg *provider.Registry, box *secret.Box, od *tools.OnDemand, db *sql.DB) func(string, string) (*jobs.Dest, error) {
+	tokens := api.DriveTokens{DB: db, Box: box, Reg: reg, CfgPath: cfgPath}
+	return func(name, user string) (*jobs.Dest, error) {
 		if name != "gdrive" {
 			return nil, fmt.Errorf("unknown destination %q", name)
 		}
@@ -1332,26 +1334,22 @@ func destinations(cfg *config.Config, reg *provider.Registry, box *secret.Box, o
 		if err != nil {
 			return nil, err
 		}
-		tok, err := box.Open("gdrive.token", str("token"))
+		tok, err := tokens.Get(user) // the job owner's own Drive
 		if err != nil {
 			return nil, err
 		}
 		if tok == "" {
-			return nil, fmt.Errorf("not connected to Google Drive: use Connect Google Drive (or `dmn providers config gdrive --signin`)")
+			return nil, fmt.Errorf("your Google Drive is not connected: Settings, Google Drive, Connect")
 		}
 		folder := str("folder")
 		if folder == "" {
 			folder = "dmn"
 		}
 		return &jobs.Dest{
-			Runner: rclone.Runner{Bin: bin},
-			Remote: rclone.Remote{Name: "gdrive", Params: gdrive.Remote(gdrive.Client{ID: str("clientId"), Secret: sec}, tok, "")},
-			Folder: folder,
-			SaveToken: func(t string) error {
-				v := box.Seal("gdrive.token", t)
-				reg.SetSetting("gdrive", "token", v)
-				return config.Set(cfgPath, "providers.gdrive.settings.token", v)
-			},
+			Runner:    rclone.Runner{Bin: bin},
+			Remote:    rclone.Remote{Name: "gdrive", Params: gdrive.Remote(gdrive.Client{ID: str("clientId"), Secret: sec}, tok, "")},
+			Folder:    folder,
+			SaveToken: func(t string) error { return tokens.Set(user, t) }, // rclone refreshed it
 		}, nil
 	}
 }

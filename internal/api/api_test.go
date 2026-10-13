@@ -274,6 +274,41 @@ func TestDriveConnect(t *testing.T) {
 	if !strings.Contains(v, `"token":true`) || strings.Contains(v, "rt") {
 		t.Fatalf("settings after sign-in: %s", v)
 	}
+
+	// With users, everyone connects their own Drive: Alice's sign-in is hers only.
+	call(t, srv, "POST", "/v1/users", "admin-tok", `{"name":"Alice","pin":"1111"}`)
+	a, _ := login(t, srv, "Alice", "1111", "phone")
+	call(t, srv, "POST", "/v1/users", a, `{"name":"Bob","pin":"2222"}`)
+	b2, _ := login(t, srv, "Bob", "2222", "phone")
+	if _, d := call(t, srv, "GET", "/v1/me/drive", a, ""); !strings.Contains(d, `"connected":false`) {
+		t.Fatalf("Alice starts unconnected (the old server-wide token is not hers): %s", d)
+	}
+	if code, b := call(t, srv, "POST", "/v1/providers/gdrive/signin", a, ""); code != 202 {
+		t.Fatalf("Alice signs in: %d %s", code, b)
+	}
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		if _, st := call(t, srv, "GET", "/v1/providers/gdrive/signin", a, ""); strings.Contains(st, `"done"`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Alice's sign-in did not finish")
+		}
+	}
+	if _, d := call(t, srv, "GET", "/v1/me/drive", a, ""); !strings.Contains(d, `"connected":true`) {
+		t.Fatalf("Alice's Drive: %s", d)
+	}
+	if _, d := call(t, srv, "GET", "/v1/me/drive", b2, ""); !strings.Contains(d, `"connected":false`) {
+		t.Fatalf("Bob sees Alice's Drive as his: %s", d)
+	}
+	if code, _ := call(t, srv, "GET", "/v1/providers/gdrive/signin", b2, ""); code != 404 {
+		t.Fatalf("Bob sees Alice's sign-in: %d", code)
+	}
+	if code, _ := call(t, srv, "DELETE", "/v1/me/drive", a, ""); code != 204 {
+		t.Fatalf("disconnect: %d", code)
+	}
+	if _, d := call(t, srv, "GET", "/v1/me/drive", a, ""); !strings.Contains(d, `"connected":false`) {
+		t.Fatalf("still connected after disconnect: %s", d)
+	}
 }
 
 func TestPair(t *testing.T) {

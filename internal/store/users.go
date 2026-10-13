@@ -300,3 +300,24 @@ func SetPref(db *sql.DB, id, key string, value []byte) error {
 	}
 	return nil
 }
+
+// UserSecret and SetUserSecret hold one user's sealed secrets (e.g. their Drive token); "" = none.
+// Removing the user removes them (ON DELETE CASCADE).
+func UserSecret(db *sql.DB, userID, name string) (string, error) {
+	var v string
+	err := db.QueryRow(`SELECT value FROM user_secrets WHERE user_id = ? AND name = ?`, userID, name).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
+}
+
+func SetUserSecret(db *sql.DB, userID, name, value string) error {
+	if value == "" {
+		_, err := db.Exec(`DELETE FROM user_secrets WHERE user_id = ? AND name = ?`, userID, name)
+		return err
+	}
+	_, err := db.Exec(`INSERT INTO user_secrets (user_id, name, value) VALUES (?,?,?)
+		ON CONFLICT(user_id, name) DO UPDATE SET value = excluded.value`, userID, name, value)
+	return err
+}

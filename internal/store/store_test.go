@@ -132,7 +132,19 @@ func TestUsers(t *testing.T) {
 		t.Fatalf("unknown user: %v", err)
 	}
 
+	if err := SetUserSecret(db, a.ID, "gdrive.token", "sealed"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := UserSecret(db, a.ID, "gdrive.token"); v != "sealed" {
+		t.Fatalf("secret: %q", v)
+	}
+	if v, _ := UserSecret(db, b.ID, "gdrive.token"); v != "" {
+		t.Fatal("another user's secret leaked")
+	}
 	DeleteUser(db, a.ID)
+	if v, _ := UserSecret(db, a.ID, "gdrive.token"); v != "" {
+		t.Fatal("secret survived the user")
+	}
 	if u, _ := DeviceUser(db, "tokhash"); u != "" {
 		t.Fatalf("binding survived the user: %q", u)
 	}

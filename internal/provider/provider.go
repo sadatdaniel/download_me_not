@@ -95,7 +95,8 @@ var builtins = []def{
 			"folder":       map[string]any{"type": "string", "default": "dmn", "title": "Drive folder for copies"},
 			"token":        map[string]any{"type": "string", "writeOnly": true, "readOnly": true, "title": "Set by Connect Google Drive"},
 		})},
-		signin: func(s map[string]any) bool { v, _ := s["token"].(string); return v == "" }},
+		// Each user connects their own Drive (/v1/me/drive); the provider only needs the app's Google client ID.
+		signin: func(s map[string]any) bool { v, _ := s["clientId"].(string); return v == "" }},
 }
 
 // Registry is safe for concurrent use; toggles apply without a restart.

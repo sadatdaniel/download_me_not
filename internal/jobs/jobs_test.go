@@ -550,7 +550,7 @@ func TestDriveCopyPipeline(t *testing.T) {
 	db, _ := store.Open(filepath.Join(dir, "j.db"))
 	defer db.Close()
 	m := New(Options{DB: db, Downloads: dir, Client: http.DefaultClient, Tick: 20 * time.Millisecond,
-		Destination: func(name string) (*Dest, error) {
+		Destination: func(name, user string) (*Dest, error) {
 			return &Dest{Runner: rclone.Runner{Bin: bin}, Remote: rclone.Remote{Name: "gd", Params: map[string]string{"type": "local"}}, Folder: cloud + "/dmn"}, nil
 		}})
 	ctx, cancel := context.WithCancel(context.Background())
