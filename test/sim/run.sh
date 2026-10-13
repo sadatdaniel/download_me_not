@@ -47,10 +47,10 @@ run_pass() {
 	}
 	TOKEN=$(grep -A2 'shown once' "$HERE/install.log" | grep -o 'dmn_[A-Za-z0-9_-]*' | head -1)
 	[ -n "$TOKEN" ] || fail "no token in the installer output"
-	grep -q "Scan with the app" "$HERE/install.log" || fail "no pairing QR"
+	grep -q "sudo dmn connect" "$HERE/install.log" || fail "no connection hint"
 	vm systemctl is-active --quiet dmn || fail "service not running"
 	vm sh -c 'command -v ffmpeg' >/dev/null || fail "ffmpeg not installed by the installer"
-	ok "service active, version $(vm dmn version), token printed once, pairing QR shown"
+	ok "service active, version $(vm dmn version), token printed once, connection hint shown"
 
 	step "Oracle's firewall blocks the panel until the ports are opened"
 	if [ $FW = 1 ]; then

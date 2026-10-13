@@ -257,7 +257,6 @@ else
 fi
 
 if [ "$FRESH" -eq 1 ]; then
-	say "scan this with the app to connect:"
-	as_dmn /usr/local/bin/dmn pair || true
+	as_dmn /usr/local/bin/dmn connect || say "open https://<this server>:$PORT in the app or a browser"
 fi
-say "done. Firewall: allow TCP $PORT (and 42069 TCP+UDP for torrents). Remove with: install.sh --uninstall"
+say "done. Show the connection steps again: sudo dmn connect. Remove: the same one-liner with: | sudo sh -s -- --uninstall"
