@@ -231,7 +231,7 @@ func (s *Store) Delete(domain string) error {
 }
 
 // shortLinks are share-link hosts that lead to a site: links on them get that site's cookies.
-var shortLinks = map[string]string{"youtu.be": "youtube.com"}
+var shortLinks = map[string]string{"youtu.be": "youtube.com", "dai.ly": "dailymotion.com"}
 
 // For returns the cookies (and saved User-Agent) that apply to rawURL, from the jar of the
 // closest stored parent domain. Only for https: cookies never travel in clear text.
