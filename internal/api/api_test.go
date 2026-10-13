@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -533,5 +534,43 @@ func TestAddonDefaults(t *testing.T) {
 	call(t, srv, "PUT", "/v1/addons/enabled", "admin-tok", `{"enabled":true}`)
 	if _, c, _ := config.Load(cfgPath, nil); len(c.Addons.URLs) != 3 || !strings.Contains(strings.Join(c.Addons.URLs, " "), "cinemeta") {
 		t.Fatalf("defaults not installed on first switch-on: %v", c.Addons.URLs)
+	}
+}
+
+// An add-on that blocks the server is asked by the app ("phone" mode): the server stores it but never contacts it.
+func TestAddonPhoneMode(t *testing.T) {
+	var hits atomic.Int32
+	blocked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Error(w, "data centres not welcome", http.StatusForbidden)
+	}))
+	defer blocked.Close()
+	srv, cfgPath := newTestServer(t)
+	if code, b := call(t, srv, "POST", "/v1/addons", "admin-tok", `{"url":"`+blocked.URL+`/manifest.json"}`); code != 400 || !strings.Contains(b, "refused this server") {
+		t.Fatalf("a refusing add-on must explain itself: %d %s", code, b)
+	}
+	if code, b := call(t, srv, "POST", "/v1/addons", "admin-tok", `{"url":"`+blocked.URL+`/manifest.json","phone":true}`); code != 200 || !strings.Contains(b, `"phone":true`) {
+		t.Fatalf("add in phone mode: %d %s", code, b)
+	}
+	call(t, srv, "PUT", "/v1/addons/enabled", "admin-tok", `{"enabled":true}`) // after adding: no defaults, nothing public
+	hits.Store(0)
+	if _, b := call(t, srv, "GET", "/v1/addons", "read-tok", ""); !strings.Contains(b, `"phone":true`) {
+		t.Fatalf("list: %s", b)
+	}
+	for _, p := range []string{"/v1/addons/home", "/v1/addons/search?q=x", "/v1/addons/streams?type=movie&id=tt1", "/v1/addons/meta?type=movie&id=tt1"} {
+		call(t, srv, "GET", p, "read-tok", "")
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("the server contacted a phone-mode add-on %d times", n)
+	}
+	if _, c, _ := config.Load(cfgPath, nil); len(c.Addons.Phone) != 1 {
+		t.Fatalf("phone mode not saved: %+v", c.Addons)
+	}
+	if code, _ := call(t, srv, "PUT", "/v1/addons/phone", "admin-tok", `{"url":"`+blocked.URL+`","phone":false}`); code != 204 {
+		t.Fatalf("switch back: %d", code)
+	}
+	call(t, srv, "DELETE", "/v1/addons?url="+url.QueryEscape(blocked.URL), "admin-tok", "")
+	if _, c, _ := config.Load(cfgPath, nil); len(c.Addons.Phone)+len(c.Addons.URLs) != 0 {
+		t.Fatalf("removal left traces: %+v", c.Addons)
 	}
 }

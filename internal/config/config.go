@@ -67,6 +67,7 @@ type Config struct {
 		Enabled  bool     `koanf:"enabled"`
 		URLs     []string `koanf:"urls"`
 		Disabled []string `koanf:"disabled"` // installed but switched off
+		Phone    []string `koanf:"phone"`    // asked by the app itself (they block this server)
 	} `koanf:"addons"`
 }
 

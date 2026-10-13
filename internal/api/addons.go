@@ -27,6 +27,7 @@ import (
 type addonInfo struct {
 	URL      string           `json:"url"`
 	Enabled  bool             `json:"enabled"`
+	Phone    bool             `json:"phone,omitempty" doc:"the app asks this add-on itself (it blocks this server); the server never contacts it"`
 	Manifest *addons.Manifest `json:"manifest,omitempty"`
 	Error    string           `json:"error,omitempty"`
 }
@@ -49,6 +50,7 @@ type addonState struct {
 	enabled  bool
 	urls     []string
 	disabled []string
+	phone    []string // asked by the app itself (they block this server); the server skips them
 }
 
 // defaultAddons are installed the first time add-ons are switched on: what Stremio itself ships with that
@@ -69,7 +71,7 @@ func (s *server) addonList() (bool, []string) {
 func (s *server) installed(ctx context.Context) []addons.Addon {
 	_, urls := s.addonList()
 	s.addon.mu.Lock()
-	urls = slices.DeleteFunc(urls, func(u string) bool { return slices.Contains(s.addon.disabled, u) })
+	urls = slices.DeleteFunc(urls, func(u string) bool { return slices.Contains(s.addon.disabled, u) || slices.Contains(s.addon.phone, u) })
 	s.addon.mu.Unlock()
 	out := make([]addons.Addon, len(urls))
 	ok := make([]bool, len(urls))
@@ -135,12 +137,19 @@ func (s *server) saveAddons() error {
 	s.addon.mu.Lock()
 	disabled := slices.Clone(s.addon.disabled)
 	s.addon.mu.Unlock()
-	return config.Set(s.CfgPath, "addons.disabled", disabled)
+	if err := config.Set(s.CfgPath, "addons.disabled", disabled); err != nil {
+		return err
+	}
+	s.addon.mu.Lock()
+	phone := slices.Clone(s.addon.phone)
+	s.addon.mu.Unlock()
+	return config.Set(s.CfgPath, "addons.phone", phone)
 }
 
 func (s *server) addonRoutes(api huma.API) {
 	s.addon.enabled, s.addon.urls = s.Cfg.Addons.Enabled, slices.Clone(s.Cfg.Addons.URLs)
 	s.addon.disabled = slices.Clone(s.Cfg.Addons.Disabled)
+	s.addon.phone = slices.Clone(s.Cfg.Addons.Phone)
 
 	huma.Register(api, op("addons", "GET", "/v1/addons", "read", "Installed Stremio add-ons and whether the feature is on"),
 		func(ctx context.Context, _ *struct{}) (*struct{ Body addonsOut }, error) {
@@ -152,7 +161,11 @@ func (s *server) addonRoutes(api huma.API) {
 			out.Addons = parallel(urls, func(u string) (addonInfo, bool) {
 				s.addon.mu.Lock()
 				on := !slices.Contains(s.addon.disabled, u)
+				phone := slices.Contains(s.addon.phone, u)
 				s.addon.mu.Unlock()
+				if phone {
+					return addonInfo{URL: u, Enabled: on, Phone: true}, true // the app loads its manifest itself
+				}
 				m, err := s.Addons.Manifest(ctx, u)
 				if err != nil {
 					return addonInfo{URL: u, Enabled: on, Error: err.Error()}, true
@@ -180,7 +193,8 @@ func (s *server) addonRoutes(api huma.API) {
 	huma.Register(api, op("addons-add", "POST", "/v1/addons", "admin", "Install an add-on by its manifest URL (checked first)"),
 		func(ctx context.Context, in *struct {
 			Body struct {
-				URL string `json:"url" minLength:"8" doc:"https://…/manifest.json or stremio://…"`
+				URL   string `json:"url" minLength:"8" doc:"https://…/manifest.json or stremio://…"`
+				Phone bool   `json:"phone,omitempty" doc:"the app asks this add-on itself (for add-ons that block this server); not checked here"`
 			}
 		}) (*struct{ Body addonInfo }, error) {
 			if s.Addons == nil {
@@ -189,6 +203,17 @@ func (s *server) addonRoutes(api huma.API) {
 			base, err := addons.Base(in.Body.URL)
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
+			}
+			if in.Body.Phone {
+				s.addon.mu.Lock()
+				if !slices.Contains(s.addon.urls, base) {
+					s.addon.urls = append(s.addon.urls, base)
+				}
+				if !slices.Contains(s.addon.phone, base) {
+					s.addon.phone = append(s.addon.phone, base)
+				}
+				s.addon.mu.Unlock()
+				return body(addonInfo{URL: base, Enabled: true, Phone: true}), s.saveAddons()
 			}
 			m, err := s.Addons.Manifest(ctx, base)
 			if err != nil {
@@ -209,6 +234,7 @@ func (s *server) addonRoutes(api huma.API) {
 			s.addon.mu.Lock()
 			s.addon.urls = slices.DeleteFunc(s.addon.urls, func(u string) bool { return u == in.URL })
 			s.addon.disabled = slices.DeleteFunc(s.addon.disabled, func(u string) bool { return u == in.URL })
+			s.addon.phone = slices.DeleteFunc(s.addon.phone, func(u string) bool { return u == in.URL })
 			s.addon.mu.Unlock()
 			return nil, s.saveAddons()
 		})
@@ -224,6 +250,28 @@ func (s *server) addonRoutes(api huma.API) {
 			s.addon.disabled = slices.DeleteFunc(s.addon.disabled, func(u string) bool { return u == in.Body.URL })
 			if !in.Body.Enabled {
 				s.addon.disabled = append(s.addon.disabled, in.Body.URL)
+			}
+			s.addon.mu.Unlock()
+			return nil, s.saveAddons()
+		})
+
+	huma.Register(api, op("addons-phone", "PUT", "/v1/addons/phone", "admin",
+		"Ask an add-on from the app instead of the server (for add-ons that block this server). The app only fetches "+
+			"titles and the list of sources; a chosen source still plays and downloads through POST /v1/addons/play"),
+		func(ctx context.Context, in *struct {
+			Body struct {
+				URL   string `json:"url"`
+				Phone bool   `json:"phone"`
+			}
+		}) (*struct{}, error) {
+			s.addon.mu.Lock()
+			if !slices.Contains(s.addon.urls, in.Body.URL) {
+				s.addon.mu.Unlock()
+				return nil, huma.Error404NotFound("no such add-on")
+			}
+			s.addon.phone = slices.DeleteFunc(s.addon.phone, func(u string) bool { return u == in.Body.URL })
+			if in.Body.Phone {
+				s.addon.phone = append(s.addon.phone, in.Body.URL)
 			}
 			s.addon.mu.Unlock()
 			return nil, s.saveAddons()
