@@ -133,8 +133,10 @@ torrent, all on the machine itself, no internet).
 - **Google Drive**: create an OAuth client of type *TVs and Limited Input devices* in Google Cloud
   (Drive API enabled), enter its ID and secret under Settings → gdrive, turn gdrive on and press
   **Connect Google Drive**. Only files the app creates are visible to it (`drive.file` scope).
-- **Sites that need a login**: export cookies.txt from your browser and import it under Settings →
-  Cookies (stored encrypted, sent only over HTTPS).
+- **Sites that need a login** (e.g. YouTube asking a cloud server to "confirm you're not a bot"): export
+  cookies.txt from a private browser window signed in to the site (close it right after), and import it in the
+  app under Settings, **Site sign-ins**. Each user has their own; only their downloads use them (stored
+  encrypted, sent only over HTTPS). Use a spare account.
 - **Torrents through a VPN**: set Settings → torrent → *bind* to the VPN interface (e.g. `wg0`);
   torrents stop while it is down (kill switch). Or set a SOCKS5 proxy.
 - **Speed limits**: Settings → Speed limits, or `dmn limits --down 10M --up 2M`.
@@ -154,7 +156,7 @@ torrent, all on the machine itself, no internet).
 | Path (native) | Content |
 |---|---|
 | `/etc/dmn/config.yaml` | Settings (`dmn config show --effective`), tokens are stored hashed |
-| `/etc/dmn/secret.key` | Key for encrypted settings and cookies; back it up with the config |
+| `/etc/dmn/secret.key` | Key for encrypted settings; back it up with the config |
 | `/var/lib/dmn` | Database, managed tools, certificates, DHT cache |
 | `/srv/dmn/downloads` | Downloads (yours; never removed by uninstall) |
 

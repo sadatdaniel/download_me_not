@@ -61,7 +61,7 @@ func (s *server) jobRoutes(api huma.API) {
 		}) (*struct{ Body jobs.ProbeResult }, error) {
 			ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
-			res, err := s.Jobs.Probe(ctx, in.Body.URL, in.Body.Header)
+			res, err := s.Jobs.Probe(ctx, in.Body.URL, in.Body.Header, userOf(ctx))
 			if err != nil {
 				return nil, jobErr(err)
 			}

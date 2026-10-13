@@ -23,7 +23,7 @@ func (m *Manager) runVideo(ctx context.Context, r *runner, j store.Job) error {
 	if m.o.Video == nil {
 		return errors.New("video downloads are not available")
 	}
-	vr, cleanup, err := m.videoRunner(j.Source)
+	vr, cleanup, err := m.videoRunner(j.Source, j.User)
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,8 @@ type ProbeResult struct {
 	Presets []video.Preset `json:"presets,omitempty"`
 }
 
-func (m *Manager) Probe(ctx context.Context, src string, header map[string]string) (ProbeResult, error) {
+// user picks whose cookies apply (the caller of the API).
+func (m *Manager) Probe(ctx context.Context, src string, header map[string]string, user string) (ProbeResult, error) {
 	if strings.HasPrefix(src, "magnet:") {
 		return ProbeResult{Kind: "torrent"}, nil
 	}
@@ -82,7 +83,7 @@ func (m *Manager) Probe(ctx context.Context, src string, header map[string]strin
 	for k, v := range header {
 		hdr.Set(k, v)
 	}
-	m.withCookies(src, hdr)
+	m.withCookies(src, user, hdr)
 	st, err := httpdl.Probe(ctx, m.o.Client, src, hdr)
 	if err != nil {
 		return ProbeResult{}, err
@@ -90,7 +91,7 @@ func (m *Manager) Probe(ctx context.Context, src string, header map[string]strin
 	if !strings.HasPrefix(st.Type, "text/html") || m.o.Video == nil || (m.o.Allowed != nil && !m.o.Allowed("video")) {
 		return ProbeResult{Kind: "web", Name: st.Name, Size: max(st.Size, 0)}, nil
 	}
-	vr, cleanup, err := m.videoRunner(src)
+	vr, cleanup, err := m.videoRunner(src, user)
 	if err != nil {
 		return ProbeResult{}, err
 	}
@@ -104,11 +105,12 @@ func (m *Manager) Probe(ctx context.Context, src string, header map[string]strin
 
 // withCookies adds the stored cookies and matching User-Agent for src unless the request already
 // carries its own (e.g. sent by the browser extension).
-func (m *Manager) withCookies(src string, h http.Header) {
-	if m.o.Cookies == nil || h.Get("Cookie") != "" {
+func (m *Manager) withCookies(src, user string, h http.Header) {
+	store := m.o.Cookies.User(user) // only the user's own cookies
+	if store == nil || h.Get("Cookie") != "" {
 		return
 	}
-	cs, ua := m.o.Cookies.For(src)
+	cs, ua := store.For(src)
 	if len(cs) > 0 {
 		h.Set("Cookie", cookies.Header(cs))
 	}
@@ -118,15 +120,15 @@ func (m *Manager) withCookies(src string, h http.Header) {
 }
 
 // videoRunner returns yt-dlp's runner with this URL's cookies in a temporary file (deleted by done).
-func (m *Manager) videoRunner(src string) (*video.Runner, func(), error) {
+func (m *Manager) videoRunner(src, user string) (*video.Runner, func(), error) {
 	vr := m.o.Video()
 	if vr == nil {
 		return nil, nil, errors.New("yt-dlp is not installed: run `dmn doctor`")
 	}
 	r := *vr
 	done := func() {}
-	if m.o.Cookies != nil {
-		p, ua, cleanup, err := m.o.Cookies.TempFile(src)
+	if store := m.o.Cookies.User(user); store != nil {
+		p, ua, cleanup, err := store.TempFile(src)
 		if err != nil {
 			return nil, nil, err
 		}

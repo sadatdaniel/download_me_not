@@ -473,6 +473,9 @@ func (s *server) deleteUser(id string, deleteFiles bool) error {
 	if err := store.DeleteUser(s.DB, id); err != nil {
 		return err
 	}
+	if err := s.Cookies.User(id).Drop(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	if f := s.userFS[id]; f != nil {
 		f.Close()

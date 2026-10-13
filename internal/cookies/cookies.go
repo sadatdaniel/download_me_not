@@ -40,8 +40,39 @@ type jar struct {
 }
 
 type Store struct {
-	dir string
-	gcm cipher.AEAD
+	dir   string
+	gcm   cipher.AEAD
+	scope string // the user these cookies belong to ("" = the server-wide store from before users)
+}
+
+var userRe = regexp.MustCompile(`^[0-9a-f]{1,32}$`)
+
+// User is one user's own cookies, in a folder of their own: they apply only to that user's downloads.
+// "" is the server-wide store; an id that is not a user id gives nil (no cookies).
+func (s *Store) User(id string) *Store {
+	if s == nil || id == "" {
+		return s
+	}
+	if !userRe.MatchString(id) {
+		return nil
+	}
+	return &Store{dir: filepath.Join(s.dir, "users", id), gcm: s.gcm, scope: id}
+}
+
+// Drop deletes all of one user's cookies (the user was removed).
+func (s *Store) Drop() error {
+	if s == nil || s.scope == "" {
+		return nil
+	}
+	return os.RemoveAll(s.dir)
+}
+
+// aad binds a sealed jar to its domain and user, so a file moved to another name or user does not open.
+func (s *Store) aad(domain string) []byte {
+	if s.scope == "" {
+		return []byte(domain)
+	}
+	return []byte(s.scope + "/" + domain) // ids are hex and domains have no slash
 }
 
 var domainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
@@ -123,7 +154,10 @@ func (s *Store) Import(domain string, r io.Reader, userAgent string) (int, error
 	plain, _ := json.Marshal(j)
 	nonce := make([]byte, s.gcm.NonceSize())
 	rand.Read(nonce)
-	sealed := s.gcm.Seal(nonce, nonce, plain, []byte(domain)) // domain as AAD: a file can't be swapped
+	sealed := s.gcm.Seal(nonce, nonce, plain, s.aad(domain))
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return 0, err
+	}
 	tmp := s.path(domain) + ".tmp"
 	if err := os.WriteFile(tmp, sealed, 0o600); err != nil {
 		return 0, err
@@ -141,7 +175,7 @@ func (s *Store) load(domain string) (jar, error) {
 	if len(b) < n {
 		return j, errors.New("cookie jar corrupted")
 	}
-	plain, err := s.gcm.Open(nil, b[:n], b[n:], []byte(domain))
+	plain, err := s.gcm.Open(nil, b[:n], b[n:], s.aad(domain))
 	if err != nil {
 		return j, errors.New("cookie jar cannot be decrypted (wrong key or tampered)")
 	}
@@ -159,6 +193,9 @@ type Summary struct {
 func (s *Store) List() ([]Summary, error) {
 	ents, err := os.ReadDir(s.dir)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []Summary{}, nil // a user who never imported any
+		}
 		return nil, err
 	}
 	now := time.Now().Unix()

@@ -121,7 +121,7 @@ func TestAuthAndScopes(t *testing.T) {
 		{"GET", "/v1/jobs/nope/peers", "read-tok", "", 404},
 		{"PUT", "/v1/jobs/nope/trackers", "write-tok", `[["file:///etc"]]`, 422},
 		{"GET", "/v1/raw/video.mp4", "", "", 401},
-		{"POST", "/v1/cookies", "write-tok", `{"domain":"example.com","content":"x"}`, 403},
+		{"POST", "/v1/cookies", "read-tok", `{"domain":"example.com","content":"x"}`, 403},
 		{"POST", "/v1/cookies", "admin-tok", `{"domain":"example.com","content":".example.com\tTRUE\t/\tTRUE\t0\tsid\tSECRETVALUE"}`, 200},
 		{"DELETE", "/v1/cookies/nope.org", "admin-tok", "", 404},
 		{"PUT", "/v1/limits", "read-tok", `{"down":1000,"up":0}`, 403},

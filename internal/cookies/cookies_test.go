@@ -75,3 +75,40 @@ func TestImportAndUse(t *testing.T) {
 		t.Fatal("garbage accepted")
 	}
 }
+
+func TestPerUser(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, filepath.Join(dir, "k"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := s.User("aaaa"), s.User("bbbb")
+	if _, err := a.Import("youtube.com", strings.NewReader(".youtube.com\tTRUE\t/\tTRUE\t0\tSID\tALICE"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if cs, _ := a.For("https://www.youtube.com/watch"); len(cs) != 1 {
+		t.Fatalf("Alice's own cookies: %v", cs)
+	}
+	if cs, _ := b.For("https://www.youtube.com/watch"); len(cs) != 0 {
+		t.Fatal("Bob's downloads would use Alice's cookies")
+	}
+	if cs, _ := s.For("https://www.youtube.com/watch"); len(cs) != 0 {
+		t.Fatal("a user's cookies leaked into the server-wide store")
+	}
+	// A jar copied into another user's folder does not open there (sealed with the user).
+	os.MkdirAll(filepath.Join(dir, "users", "bbbb"), 0o700)
+	data, _ := os.ReadFile(filepath.Join(dir, "users", "aaaa", "youtube.com.enc"))
+	os.WriteFile(filepath.Join(dir, "users", "bbbb", "youtube.com.enc"), data, 0o600)
+	if cs, _ := b.For("https://www.youtube.com/watch"); len(cs) != 0 {
+		t.Fatal("a copied jar opened for another user")
+	}
+	if s.User("../x") != nil {
+		t.Fatal("a user id that is not hex must not name a folder")
+	}
+	if err := a.Drop(); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := a.List(); len(l) != 0 {
+		t.Fatalf("dropped user still has cookies: %v", l)
+	}
+}

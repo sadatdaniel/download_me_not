@@ -488,7 +488,7 @@ func TestVideoJob(t *testing.T) {
 	go func() { done <- m.Run(ctx) }()
 	defer func() { cancel(); <-done }()
 
-	pr, err := m.Probe(ctx, srv.URL+"/watch", nil)
+	pr, err := m.Probe(ctx, srv.URL+"/watch", nil, "")
 	if err != nil || pr.Kind != "video" || len(pr.Video.Formats) == 0 {
 		t.Fatalf("probe: %+v %v", pr, err)
 	}

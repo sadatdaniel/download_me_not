@@ -183,6 +183,20 @@ func TestUsersAreSeparate(t *testing.T) {
 		t.Fatalf("Bob sees Alice's progress: %s", ev)
 	}
 
+	// Cookies are per user: Alice's sign-ins never show up (or get used) for Bob.
+	if code, body := call(t, srv, "POST", "/v1/cookies", a, `{"domain":"youtube.com","content":".youtube.com\tTRUE\t/\tTRUE\t0\tSID\tALICE"}`); code != 200 {
+		t.Fatalf("Alice imports cookies: %d %s", code, body)
+	}
+	if _, body := call(t, srv, "GET", "/v1/cookies", a, ""); !strings.Contains(body, "youtube.com") {
+		t.Fatalf("Alice's cookies: %s", body)
+	}
+	if _, body := call(t, srv, "GET", "/v1/cookies", b, ""); strings.Contains(body, "youtube.com") {
+		t.Fatalf("Bob sees Alice's cookies: %s", body)
+	}
+	if code, _ := call(t, srv, "DELETE", "/v1/cookies/youtube.com", b, ""); code != 404 {
+		t.Fatalf("Bob removed Alice's cookies: %d", code)
+	}
+
 	// Preferences are per user.
 	if code, body := call(t, srv, "PUT", "/v1/prefs/favorites", a, `["tt1"]`); code != 204 {
 		t.Fatalf("set pref: %d %s", code, body)

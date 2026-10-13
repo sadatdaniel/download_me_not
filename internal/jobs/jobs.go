@@ -541,7 +541,7 @@ func (m *Manager) runWeb(ctx context.Context, r *runner, j store.Job) error {
 	for k, v := range meta.Header {
 		hdr.Set(k, v)
 	}
-	m.withCookies(j.Source, hdr) // looked up per run, so cookies never sit in the job database
+	m.withCookies(j.Source, j.User, hdr) // looked up per run, so cookies never sit in the job database
 	save := func(f map[string]any) error {
 		b, _ := json.Marshal(meta)
 		f["meta"] = json.RawMessage(b)
