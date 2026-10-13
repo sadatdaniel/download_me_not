@@ -11,8 +11,10 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,6 +57,11 @@ func NewScoped(dir string, signKey []byte, scope string) (*FS, error) {
 		f.scope = scope
 	}
 	return f, err
+}
+
+// Sub opens a scoped FS for a folder below this one (a user's folder), with the same signing key.
+func (f *FS) Sub(dir, scope string) (*FS, error) {
+	return NewScoped(filepath.Join(f.dir, filepath.FromSlash(dir)), f.key, scope)
 }
 
 func (f *FS) Close() error { return f.root.Close() }
@@ -202,7 +209,11 @@ func (f *FS) Sign(p string, ttl time.Duration) (string, error) {
 		return "", err
 	}
 	exp := strconv.FormatInt(time.Now().Add(ttl).Unix(), 10)
-	return "exp=" + exp + "&sig=" + f.mac(c, exp), nil
+	q := "exp=" + exp + "&sig=" + f.mac(c, exp)
+	if f.scope != "" {
+		q += "&u=" + url.QueryEscape(f.scope) // tells the server which scope to verify in
+	}
+	return q, nil
 }
 
 func (f *FS) Verify(p, exp, sig string) bool {

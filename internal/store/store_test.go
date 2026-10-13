@@ -117,6 +117,21 @@ func TestUsers(t *testing.T) {
 	if u, _ := DeviceUser(db, "tokhash"); u != a.ID {
 		t.Fatalf("rebind: %q", u)
 	}
+	if err := SetPref(db, b.ID, "fav", []byte(`["x"]`)); err != nil {
+		t.Fatal(err)
+	}
+	SetPref(db, b.ID, "progress", []byte(`{"a":1}`))
+	SetPref(db, b.ID, "fav", nil)
+	if p, _ := Prefs(db, b.ID); p != `{"progress":{"a":1}}` {
+		t.Fatalf("prefs: %s", p)
+	}
+	if err := SetPref(db, b.ID, "big", make([]byte, 1<<20)); err == nil {
+		t.Fatal("oversized prefs accepted")
+	}
+	if err := SetPref(db, "nobody", "k", []byte(`1`)); err != ErrNoUser {
+		t.Fatalf("unknown user: %v", err)
+	}
+
 	DeleteUser(db, a.ID)
 	if u, _ := DeviceUser(db, "tokhash"); u != "" {
 		t.Fatalf("binding survived the user: %q", u)

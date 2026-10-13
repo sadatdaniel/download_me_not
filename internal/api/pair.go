@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
-	"os"
 
 	"github.com/danielgtaylor/huma/v2"
 	"rsc.io/qr"
@@ -70,14 +69,7 @@ func (s *server) pairRoutes(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			s.mu.Lock() // take the new list now: the replaced token stops working immediately
-			if fi, err := os.Stat(s.CfgPath); err == nil {
-				if _, c, err := config.Load(s.CfgPath, nil); err == nil {
-					s.cfgMtime = fi.ModTime()
-					s.setTokens(c.Auth.Tokens)
-				}
-			}
-			s.mu.Unlock()
+			s.reloadTokens() // the replaced token stops working immediately
 			p := PairPayload(in.Body.URL, tok, s.Fingerprint)
 			code, err := qr.Encode(p, qr.L)
 			if err != nil {
@@ -85,4 +77,25 @@ func (s *server) pairRoutes(api huma.API) {
 			}
 			return body(pairOut{Payload: p, QR: "data:image/png;base64," + base64.StdEncoding.EncodeToString(code.PNG()), Fingerprint: s.Fingerprint}), nil
 		})
+}
+
+// RemoveTokens deletes the tokens that match from the config file and returns their hashes.
+func RemoveTokens(cfgPath string, drop func(config.Token) bool) ([]string, error) {
+	_, cfg, err := config.Load(cfgPath, nil)
+	if err != nil {
+		return nil, err
+	}
+	var gone []string
+	toks := []map[string]any{}
+	for _, t := range cfg.Auth.Tokens {
+		if drop(t) {
+			gone = append(gone, t.Hash)
+		} else {
+			toks = append(toks, map[string]any{"name": t.Name, "hash": t.Hash, "scope": t.Scope})
+		}
+	}
+	if len(gone) == 0 {
+		return nil, nil
+	}
+	return gone, config.Set(cfgPath, "auth.tokens", toks)
 }

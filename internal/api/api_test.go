@@ -29,6 +29,12 @@ import (
 
 func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
+	srv, cfgPath, _ := newTestServerJobs(t)
+	return srv, cfgPath
+}
+
+func newTestServerJobs(t *testing.T) (*httptest.Server, string, *jobs.Manager) {
+	t.Helper()
 	dir := t.TempDir()
 	dl := filepath.Join(dir, "dl")
 	os.MkdirAll(dl, 0o755)
@@ -59,7 +65,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 		Addons: &addons.Client{HTTP: http.DefaultClient}}) // tests use a local test add-on (loopback)
 	srv := httptest.NewServer(h)
 	t.Cleanup(func() { srv.Close(); db.Close(); f.Close() })
-	return srv, cfgPath
+	return srv, cfgPath, jm
 }
 
 func call(t *testing.T, srv *httptest.Server, method, path, tok, body string) (int, string) {

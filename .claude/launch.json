@@ -13,6 +13,17 @@
       "port": 18080
     },
     {
+      "name": "webui-users",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": [
+        "run", "--rm", "--name", "dmn-preview-users", "-p", "127.0.0.1:18090:8080",
+        "-v", "${workspaceFolder}:/src:ro", "-v", "dmn-dev_dmn-gomod:/go/pkg/mod", "-v", "dmn-dev_dmn-gocache:/root/.cache/go-build",
+        "-w", "/src", "dmn-dev:latest", "sh", "-c",
+        "go build -buildvcs=false -o /tmp/dmn ./cmd/dmn && export DMN_CONFIG=/tmp/c/config.yaml HOME=/tmp/h && /tmp/dmn config set server.tls off && /tmp/dmn config set server.listen 0.0.0.0:8080 && /tmp/dmn config set paths.downloads /tmp/dl && /tmp/dmn setup && /tmp/dmn user add Demo --pin 1234 && /tmp/dmn user add Guest --pin 5678 && mkdir -p /tmp/dl/users && echo hello > /tmp/dl/notes.txt && exec /tmp/dmn serve"
+      ],
+      "port": 18090
+    },
+    {
       "name": "app-web",
       "runtimeExecutable": "docker",
       "runtimeArgs": [

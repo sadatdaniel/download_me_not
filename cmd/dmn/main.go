@@ -80,7 +80,7 @@ func main() {
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd(), updateCmd(), uninstallCmd(), healthCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd(), updateCmd(), uninstallCmd(), healthCmd(), userCmd(), loginCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}

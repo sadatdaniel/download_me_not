@@ -83,23 +83,41 @@ function useToast() {
 
 // ---- views --------------------------------------------------------------------------------------
 
+// Login: name + PIN when the server has users (a token for this browser), otherwise a pasted API token.
 function Login({ onDone }) {
+  const [users, setUsers] = useState(null);
+  const [name, setName] = useState('');
   const [t, setT] = useState('');
   const [err, setErr] = useState('');
+  useEffect(() => { fetch('/v1/users').then(r => r.json()).then(setUsers).catch(() => setUsers([])); }, []);
   const submit = async e => {
     e.preventDefault();
-    token = t.trim();
     try {
-      await api('GET', '/v1/jobs');
+      if (users && users.length) {
+        token = '';
+        const out = await api('POST', '/v1/login', { name, pin: t.trim(), device: 'browser' });
+        token = out.token;
+      } else {
+        token = t.trim();
+        await api('GET', '/v1/jobs');
+      }
       try { localStorage.setItem(tokenKey, token); } catch { }
       onDone();
     } catch (x) { setErr(x.message); }
   };
+  if (!users) return null;
   return html`<div class="card login">
     <h2>download_me_not</h2>
-    <p class="muted">Paste an API token. Create one on the server with <code>dmn setup</code> or <code>dmn pair</code>.</p>
     <form onSubmit=${submit}>
-      <input type="password" placeholder="dmn_..." value=${t} onInput=${e => setT(e.target.value)} autofocus />
+      ${users.length ? html`
+        <select value=${name} onChange=${e => setName(e.target.value)} autofocus>
+          <option value="">Who are you?</option>
+          ${users.map(u => html`<option value=${u.name}>${u.name}</option>`)}
+        </select>
+        <input type="password" inputmode="numeric" maxlength="4" placeholder="PIN" value=${t} onInput=${e => setT(e.target.value)} style="margin-top:10px" />`
+      : html`
+        <p class="muted">Paste an API token. Create one on the server with <code>dmn setup</code> or <code>dmn pair</code>.</p>
+        <input type="password" placeholder="dmn_..." value=${t} onInput=${e => setT(e.target.value)} autofocus />`}
       <div class="row" style="margin-top:10px"><button class="primary">Sign in</button></div>
       ${err && html`<p class="error">${err}</p>`}
     </form>

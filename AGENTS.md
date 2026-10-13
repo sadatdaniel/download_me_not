@@ -33,6 +33,7 @@ docker compose -f compose.dev.yaml run --rm test go vet ./...
 - Server image: `docker build -t dmn:local .`, then see `compose.yaml`. The API contract is `api/openapi.json`; regenerate it with `UPDATE_OPENAPI=1` (see `internal/api`).
 - Don't call `python` on the host (it's a Store stub that hangs). Use Docker or perl.
 - Preview the web UI: `.claude/launch.json` (config `webui-preview`) builds and runs a throwaway server on http://127.0.0.1:18080 with a demo video; the API token is printed by `dmn setup` in the container log. Never add real downloads in a preview (rule 7).
+- Multi-user preview: config `webui-users` (http://127.0.0.1:18090, container `dmn-preview-users`) starts with demo users Demo (owner, PIN 1234) and Guest (PIN 5678).
 - The host also runs unrelated containers (`a50-*`, `oci-*`, omniroute). **Never touch, prune or delete Docker resources this project didn't create.** No `docker system prune`, no `docker volume prune`.
 - The host is Windows. Line endings are forced to LF by `.gitattributes`.
 

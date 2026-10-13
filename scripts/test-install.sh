@@ -27,7 +27,7 @@ ok "tampered release refused"
 if env -u DMN_INSTALL_PUBKEY sh /src/scripts/install.sh --from "$W/rel" --yes >/dev/null 2>&1; then fail "accepted a release signed by another key"; fi
 ok "foreign signature refused"
 
-sh /src/scripts/install.sh --from "$W/rel" --yes --port 9443 > out.txt 2>&1 || { cat out.txt; fail "install"; }
+sh /src/scripts/install.sh --from "$W/rel" --yes --port 9443 --user Alice --pin 1234 > out.txt 2>&1 || { cat out.txt; fail "install"; }
 [ -x /opt/dmn/bin/dmn ] && [ -L /usr/local/bin/dmn ] || fail "binary not installed"
 id dmn >/dev/null || fail "user not created"
 grep -q "listen: 0.0.0.0:9443" /etc/dmn/config.yaml || fail "config not written"
@@ -36,6 +36,7 @@ grep -q "tls: self-signed" /etc/dmn/config.yaml || fail "tls mode"
 [ "$(stat -c %a /etc/dmn)" = 700 ] || fail "config dir not private"
 grep -q "Scan with the app" out.txt || fail "no pairing QR printed"
 grep -q "Token" out.txt || fail "no owner token printed"
+grep -q "added Alice (owner)" out.txt || fail "first user not added"
 ok "fresh install"
 
 # Re-run: upgrade/repair keeps the config (and its tokens).
@@ -49,6 +50,7 @@ ok "re-run keeps config"
 runuser -u dmn -- env DMN_CONFIG=/etc/dmn/config.yaml /opt/dmn/bin/dmn serve > serve.log 2>&1 &
 sleep 2
 curl -sk https://127.0.0.1:9443/v1/health | grep -q '"ok"' || { cat serve.log; fail "server not answering"; }
+curl -sk -d '{"name":"alice","pin":"1234"}' -H 'Content-Type: application/json' https://127.0.0.1:9443/v1/login | grep -q '"token":"dmn_' || fail "first user cannot sign in"
 kill %1 2>/dev/null || true
 ok "service user runs the server over HTTPS"
 

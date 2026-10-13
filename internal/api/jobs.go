@@ -21,6 +21,8 @@ func jobErr(err error) error {
 		return huma.Error404NotFound(err.Error())
 	case errors.Is(err, jobs.ErrNotRunning):
 		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, jobs.ErrBusyElsewhere):
+		return huma.Error409Conflict(err.Error())
 	default:
 		return huma.Error400BadRequest(err.Error())
 	}
@@ -39,10 +41,12 @@ func (s *server) jobRoutes(api huma.API) {
 	huma.Register(api, op("add-job", "POST", "/v1/jobs", "write",
 		"Add a download: URL, magnet link or .torrent (base64). Re-adding a known torrent returns the existing job with 200"),
 		func(ctx context.Context, in *struct{ Body jobs.AddRequest }) (*jobOut, error) {
+			in.Body.User = userOf(ctx)
 			j, existed, err := s.Jobs.Add(in.Body)
 			if err != nil {
 				return nil, jobErr(err)
 			}
+			j = own(j)
 			if existed {
 				return &jobOut{http.StatusOK, j}, nil
 			}
@@ -68,10 +72,12 @@ func (s *server) jobRoutes(api huma.API) {
 			Status int
 			Body   store.Job
 		}, error) {
+			in.Body.User = userOf(ctx)
 			j, err := s.Jobs.AddCopy(in.Body)
 			if err != nil {
 				return nil, jobErr(err)
 			}
+			j = own(j)
 			return &struct {
 				Status int
 				Body   store.Job
@@ -79,9 +85,9 @@ func (s *server) jobRoutes(api huma.API) {
 		})
 	huma.Register(api, op("get-job", "GET", "/v1/jobs/{id}", "read", "One download"),
 		func(ctx context.Context, in *idIn) (*struct{ Body store.Job }, error) {
-			j, err := s.Jobs.Get(in.ID)
+			j, err := s.mine(ctx, in.ID)
 			if err != nil {
-				return nil, jobErr(err)
+				return nil, err
 			}
 			return body(j), nil
 		})
@@ -91,6 +97,9 @@ func (s *server) jobRoutes(api huma.API) {
 	}{{"pause", s.Jobs.Pause}, {"resume", s.Jobs.Resume}} {
 		huma.Register(api, op(a.name+"-job", "POST", "/v1/jobs/{id}/"+a.name, "write", a.name+" a download"),
 			func(ctx context.Context, in *idIn) (*struct{}, error) {
+				if _, err := s.mine(ctx, in.ID); err != nil {
+					return nil, err
+				}
 				if err := a.fn(in.ID); err != nil {
 					return nil, jobErr(err)
 				}
@@ -104,6 +113,9 @@ func (s *server) jobRoutes(api huma.API) {
 				Mode string `json:"mode" enum:"standard,stream"`
 			}
 		}) (*struct{}, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			if err := s.Jobs.SetMode(in.ID, in.Body.Mode); err != nil {
 				return nil, jobErr(err)
 			}
@@ -114,6 +126,9 @@ func (s *server) jobRoutes(api huma.API) {
 			ID          string `path:"id"`
 			DeleteFiles bool   `query:"deleteFiles"`
 		}) (*struct{}, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			if err := s.Jobs.Cancel(in.ID, in.DeleteFiles); err != nil {
 				return nil, jobErr(err)
 			}
@@ -121,6 +136,9 @@ func (s *server) jobRoutes(api huma.API) {
 		})
 	huma.Register(api, op("job-peers", "GET", "/v1/jobs/{id}/peers", "read", "Connected peers of a running torrent"),
 		func(ctx context.Context, in *idIn) (*struct{ Body []engine.Peer }, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			ps, err := s.Jobs.Peers(in.ID)
 			if err != nil {
 				return nil, jobErr(err)
@@ -129,6 +147,9 @@ func (s *server) jobRoutes(api huma.API) {
 		})
 	huma.Register(api, op("job-pieces", "GET", "/v1/jobs/{id}/pieces", "read", "Piece map, availability and a plain-language hint for a running torrent"),
 		func(ctx context.Context, in *idIn) (*struct{ Body jobs.PieceView }, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			v, err := s.Jobs.Pieces(in.ID)
 			if err != nil {
 				return nil, jobErr(err)
@@ -137,6 +158,9 @@ func (s *server) jobRoutes(api huma.API) {
 		})
 	huma.Register(api, op("job-trackers", "GET", "/v1/jobs/{id}/trackers", "read", "Tracker tiers of a running torrent"),
 		func(ctx context.Context, in *idIn) (*struct{ Body [][]string }, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			tr, err := s.Jobs.Trackers(in.ID)
 			if err != nil {
 				return nil, jobErr(err)
@@ -155,6 +179,9 @@ func (s *server) jobRoutes(api huma.API) {
 					}
 				}
 			}
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			if err := s.Jobs.SetTrackers(in.ID, in.Body); err != nil {
 				return nil, jobErr(err)
 			}
@@ -162,6 +189,9 @@ func (s *server) jobRoutes(api huma.API) {
 		})
 	huma.Register(api, op("recheck-job", "POST", "/v1/jobs/{id}/recheck", "write", "Verify a torrent's data on disk (runs in the background)"),
 		func(ctx context.Context, in *idIn) (*struct{}, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			if err := s.Jobs.Recheck(in.ID); err != nil {
 				return nil, jobErr(err)
 			}
@@ -174,6 +204,9 @@ func (s *server) jobRoutes(api huma.API) {
 				Priority int `json:"priority"`
 			}
 		}) (*struct{}, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			if err := s.Jobs.SetPriority(in.ID, in.Body.Priority); err != nil {
 				return nil, jobErr(err)
 			}
@@ -181,6 +214,9 @@ func (s *server) jobRoutes(api huma.API) {
 		})
 	huma.Register(api, op("job-files", "GET", "/v1/jobs/{id}/files", "read", "Files of a running torrent (the file picker)"),
 		func(ctx context.Context, in *idIn) (*struct{ Body []engine.File }, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			fs, err := s.Jobs.Files(in.ID)
 			if err != nil {
 				return nil, jobErr(err)
@@ -195,6 +231,9 @@ func (s *server) jobRoutes(api huma.API) {
 				Priority string `json:"priority" enum:"skip,normal,high"`
 			}
 		}) (*struct{}, error) {
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
+			}
 			if err := s.Jobs.SetFilePriority(in.ID, in.Index, in.Body.Priority); err != nil {
 				return nil, jobErr(err)
 			}
@@ -202,10 +241,14 @@ func (s *server) jobRoutes(api huma.API) {
 		})
 	huma.Register(api, op("sign-job", "POST", "/v1/jobs/{id}/sign", "read", "Short-lived stream URL for a download, also while it runs"),
 		func(ctx context.Context, in *idIn) (*struct{ Body map[string]string }, error) {
-			if _, err := s.Jobs.Get(in.ID); err != nil {
-				return nil, jobErr(err)
+			if _, err := s.mine(ctx, in.ID); err != nil {
+				return nil, err
 			}
-			q, err := s.FS.Sign("jobs/"+in.ID, 6*time.Hour)
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			q, err := f.Sign("jobs/"+in.ID, 6*time.Hour)
 			if err != nil {
 				return nil, err
 			}
@@ -217,16 +260,15 @@ func (s *server) jobRoutes(api huma.API) {
 // ?file=N picks a file inside a torrent (default: the largest).
 func (s *server) stream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	q := r.URL.Query()
-	if q.Get("sig") != "" {
-		if !s.FS.Verify("jobs/"+id, q.Get("exp"), q.Get("sig")) {
-			http.Error(w, "invalid or expired link", http.StatusForbidden)
-			return
-		}
-	} else if rank[s.scope(r.Header.Get("Authorization"))] < rank["read"] {
-		http.Error(w, "missing or invalid token", http.StatusUnauthorized)
+	_, user, ok := s.access(w, r, "jobs/"+id)
+	if !ok {
 		return
 	}
+	if j, err := s.Jobs.Get(id); err != nil || (j.User != user && (user != "" || s.hasUsers())) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	q := r.URL.Query()
 	idx := -1
 	if f := q.Get("file"); f != "" {
 		n, err := strconv.Atoi(f)

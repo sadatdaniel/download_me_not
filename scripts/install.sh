@@ -19,6 +19,9 @@ START=1
 FFMPEG=1
 UNINSTALL=0
 PURGE=0
+YES=0
+FIRST_USER=${DMN_USER:-}
+FIRST_PIN=${DMN_PIN:-}
 
 # Release signing key: same as internal/update/release-key.pub (a test keeps them equal).
 PUBKEY='-----BEGIN PUBLIC KEY-----
@@ -37,7 +40,9 @@ usage() {
 	echo "  --from DIR           use release files from DIR instead of downloading"
 	echo "  --no-start           install but do not start the service"
 	echo "  --no-ffmpeg          do not install ffmpeg with the system package manager"
-	echo "  --yes                no questions (the installer asks none today)"
+	echo "  --user NAME          first user (the owner); asked on a fresh install unless --yes"
+	echo "  --pin NNNN           that user's 4-digit PIN (or env DMN_PIN); asked when missing"
+	echo "  --yes                no questions (without --user: add users later with: dmn user add NAME)"
 	echo "  --uninstall          remove service and binary (keeps config and data)"
 	echo "  --purge              with --uninstall: also remove config and data (never the download folder)"
 }
@@ -53,7 +58,9 @@ while [ $# -gt 0 ]; do
 	--from) FROM=$2; shift ;;
 	--no-start) START=0 ;;
 	--no-ffmpeg) FFMPEG=0 ;;
-	--yes) ;;
+	--yes) YES=1 ;;
+	--user) FIRST_USER=$2; shift ;;
+	--pin) FIRST_PIN=$2; shift ;;
 	--uninstall) UNINSTALL=1 ;;
 	--purge) PURGE=1 ;;
 	--docker) echo "Docker: use compose.yaml from the repository (docker compose run --rm dmn setup; docker compose up -d)."; exit 0 ;;
@@ -191,6 +198,25 @@ if [ "$FRESH" -eq 1 ]; then
 	as_dmn /usr/local/bin/dmn setup
 else
 	say "existing config kept (upgrade or repair)"
+fi
+
+# The first user (the owner). Questions go to /dev/tty: with `curl | sudo sh`, stdin is the script.
+has_tty() { [ "$YES" -eq 0 ] && { : </dev/tty; } 2>/dev/null; }
+if [ "$FRESH" -eq 1 ] && [ -z "$FIRST_USER" ] && has_tty; then
+	printf 'Your name (the first user, who can add the others): ' >/dev/tty
+	read -r FIRST_USER </dev/tty
+fi
+if [ -n "$FIRST_USER" ]; then
+	while :; do
+		case $FIRST_PIN in [0-9][0-9][0-9][0-9]) break ;; esac
+		has_tty || die "--pin must be 4 digits"
+		printf 'PIN for %s (4 digits): ' "$FIRST_USER" >/dev/tty
+		stty -echo </dev/tty 2>/dev/null || true
+		read -r FIRST_PIN </dev/tty
+		stty echo </dev/tty 2>/dev/null || true
+		echo >/dev/tty
+	done
+	as_dmn env DMN_PIN="$FIRST_PIN" /usr/local/bin/dmn user add "$FIRST_USER" || say "warning: could not add $FIRST_USER (see above); add users later with: sudo dmn user add NAME"
 fi
 
 if has_systemd; then

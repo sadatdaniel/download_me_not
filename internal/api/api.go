@@ -71,6 +71,8 @@ type server struct {
 	signin   signIns
 	checked  time.Time
 	addon    addonState
+	userFS   map[string]*fsapi.FS // each user's folder, opened once
+	login    loginLimit
 }
 
 func (s *server) scope(authz string) string {
@@ -124,18 +126,23 @@ func New(d Deps) (http.Handler, huma.API) {
 				need = sc[0]
 			}
 		}
+		ctx = huma.WithValue(ctx, addrKey{}, clientAddr(ctx.RemoteAddr()))
 		if need == "" {
 			next(ctx)
 			return
 		}
-		have := s.scope(ctx.Header("Authorization"))
+		have, user := s.auth(ctx.Header("Authorization"))
 		switch {
 		case have == "":
 			huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing or invalid token")
 		case rank[have] < rank[need]:
 			huma.WriteErr(api, ctx, http.StatusForbidden, "this token has scope "+have+"; "+need+" is required")
+		// Once users exist, a device that has not signed in reaches only server-wide admin routes (an install's
+		// owner token), never anyone's downloads or files.
+		case user == "" && need != "admin" && s.hasUsers():
+			huma.WriteErr(api, ctx, http.StatusForbidden, "sign in with your name and PIN first (POST /v1/login)")
 		default:
-			next(ctx)
+			next(huma.WithValue(ctx, userKey{}, user))
 		}
 	})
 	s.routes(api)
@@ -213,10 +220,11 @@ func (s *server) routes(api huma.API) {
 
 	huma.Register(api, op("list-jobs", "GET", "/v1/jobs", "read", "List downloads"),
 		func(ctx context.Context, _ *struct{}) (*struct{ Body []store.Job }, error) {
-			jobs, err := store.ListJobs(s.DB)
+			jobs, err := s.jobsOf(userOf(ctx))
 			return body(jobs), err
 		})
 	s.jobRoutes(api)
+	s.userRoutes(api)
 	s.cookieRoutes(api)
 	s.providerRoutes(api)
 	s.toolRoutes(api)
@@ -234,7 +242,7 @@ func (s *server) routes(api huma.API) {
 			t := time.NewTicker(time.Second) // also keeps proxies and phones from dropping idle streams
 			defer t.Stop()
 			for {
-				if send.Data(s.Jobs.Progress()) != nil {
+				if send.Data(s.progressOf(userOf(ctx))) != nil {
 					return
 				}
 				select {
@@ -249,12 +257,20 @@ func (s *server) routes(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Limit int `query:"limit" default:"2000" minimum:"1" maximum:"20000"`
 		}) (*struct{ Body []fsapi.Entry }, error) {
-			es, err := s.FS.Media(in.Limit)
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			es, err := f.Media(in.Limit)
 			return body(es), err
 		})
 	huma.Register(api, op("fs-list", "GET", "/v1/fs", "read", "List a folder"),
 		func(ctx context.Context, in *pathIn) (*struct{ Body []fsapi.Entry }, error) {
-			es, err := s.FS.List(in.Path)
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			es, err := f.List(in.Path)
 			if err != nil {
 				return nil, fsErr(err)
 			}
@@ -262,7 +278,11 @@ func (s *server) routes(api huma.API) {
 		})
 	huma.Register(api, op("fs-stat", "GET", "/v1/fs/stat", "read", "Inspect one entry"),
 		func(ctx context.Context, in *pathIn) (*struct{ Body fsapi.Entry }, error) {
-			e, err := s.FS.Stat(in.Path)
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			e, err := f.Stat(in.Path)
 			if err != nil {
 				return nil, fsErr(err)
 			}
@@ -270,7 +290,11 @@ func (s *server) routes(api huma.API) {
 		})
 	huma.Register(api, op("fs-usage", "GET", "/v1/fs/usage", "read", "Disk usage and free space"),
 		func(ctx context.Context, _ *struct{}) (*struct{ Body fsapi.Usage }, error) {
-			u, err := s.FS.Usage()
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			u, err := f.Usage()
 			return body(u), err
 		})
 	huma.Register(api, op("fs-mkdir", "POST", "/v1/fs/mkdir", "write", "Create a folder"),
@@ -279,7 +303,11 @@ func (s *server) routes(api huma.API) {
 				Path string `json:"path" minLength:"1"`
 			}
 		}) (*struct{}, error) {
-			if err := s.FS.Mkdir(in.Body.Path); err != nil {
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.Mkdir(in.Body.Path); err != nil {
 				return nil, fsErr(err)
 			}
 			return nil, nil
@@ -291,7 +319,11 @@ func (s *server) routes(api huma.API) {
 				To   string `json:"to" minLength:"1"`
 			}
 		}) (*struct{}, error) {
-			if err := s.FS.Move(in.Body.From, in.Body.To); err != nil {
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.Move(in.Body.From, in.Body.To); err != nil {
 				return nil, fsErr(err)
 			}
 			return nil, nil
@@ -303,7 +335,11 @@ func (s *server) routes(api huma.API) {
 				To   string `json:"to" minLength:"1"`
 			}
 		}) (*struct{}, error) {
-			if err := s.FS.Copy(in.Body.From, in.Body.To); err != nil {
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.Copy(in.Body.From, in.Body.To); err != nil {
 				return nil, fsErr(err)
 			}
 			return nil, nil
@@ -312,7 +348,11 @@ func (s *server) routes(api huma.API) {
 		func(ctx context.Context, in *struct {
 			Path string `query:"path" required:"true"`
 		}) (*struct{}, error) {
-			if err := s.FS.Remove(in.Path); err != nil {
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.Remove(in.Path); err != nil {
 				return nil, fsErr(err)
 			}
 			return nil, nil
@@ -324,14 +364,18 @@ func (s *server) routes(api huma.API) {
 				TTLSeconds int    `json:"ttlSeconds,omitempty" minimum:"1" maximum:"86400" default:"21600"`
 			}
 		}) (*struct{ Body map[string]string }, error) {
-			if _, err := s.FS.Stat(in.Body.Path); err != nil {
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := f.Stat(in.Body.Path); err != nil {
 				return nil, fsErr(err)
 			}
 			ttl := in.Body.TTLSeconds
 			if ttl == 0 {
 				ttl = 21600
 			}
-			q, err := s.FS.Sign(in.Body.Path, time.Duration(ttl)*time.Second)
+			q, err := f.Sign(in.Body.Path, time.Duration(ttl)*time.Second)
 			if err != nil {
 				return nil, fsErr(err)
 			}
@@ -392,33 +436,21 @@ func (s *server) routes(api huma.API) {
 // raw streams a file with Range support. Auth: a signed URL (for players) or a read token.
 func (s *server) raw(w http.ResponseWriter, r *http.Request) {
 	p := r.PathValue("path")
-	q := r.URL.Query()
-	if q.Get("sig") != "" {
-		if !s.FS.Verify(p, q.Get("exp"), q.Get("sig")) {
-			http.Error(w, "invalid or expired link", http.StatusForbidden)
-			return
-		}
-	} else if rank[s.scope(r.Header.Get("Authorization"))] < rank["read"] {
-		http.Error(w, "missing or invalid token", http.StatusUnauthorized)
+	f, _, ok := s.access(w, r, p)
+	if !ok {
 		return
 	}
-	s.FS.Serve(w, r, p)
+	f.Serve(w, r, p)
 }
 
 // zip downloads a folder as a ZIP (read token or a signed link to the folder).
 func (s *server) zip(w http.ResponseWriter, r *http.Request) {
 	p := r.PathValue("path")
-	q := r.URL.Query()
-	if q.Get("sig") != "" {
-		if !s.FS.Verify(p, q.Get("exp"), q.Get("sig")) {
-			http.Error(w, "invalid or expired link", http.StatusForbidden)
-			return
-		}
-	} else if rank[s.scope(r.Header.Get("Authorization"))] < rank["read"] {
-		http.Error(w, "missing or invalid token", http.StatusUnauthorized)
+	f, _, ok := s.access(w, r, p)
+	if !ok {
 		return
 	}
-	e, err := s.FS.Stat(p)
+	e, err := f.Stat(p)
 	if err != nil || !e.Dir {
 		http.Error(w, "not a folder", http.StatusNotFound)
 		return
@@ -429,7 +461,7 @@ func (s *server) zip(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name + ".zip"}))
-	if err := s.FS.Zip(w, p); err != nil {
+	if err := f.Zip(w, p); err != nil {
 		// Headers are sent; the client sees a truncated ZIP, which fails its checksum.
 		fmt.Fprintln(os.Stderr, "zip:", err)
 	}

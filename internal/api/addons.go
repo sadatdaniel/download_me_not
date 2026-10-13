@@ -395,11 +395,11 @@ func (s *server) addonRoutes(api huma.API) {
 				if err != nil {
 					return nil, huma.Error400BadRequest(err.Error())
 				}
-				req = jobs.AddRequest{Source: m, Mode: mode}
+				req = jobs.AddRequest{Source: m, Mode: mode, User: userOf(ctx)}
 			case st.URL != "":
 				// Direct links also go through the server (the app only ever talks to the server): a web download,
 				// in stream mode when playing, which the app plays through the job's stream link.
-				req = jobs.AddRequest{Source: st.URL, Mode: mode}
+				req = jobs.AddRequest{Source: st.URL, Mode: mode, User: userOf(ctx)}
 				if st.BehaviorHints.ProxyHeaders != nil {
 					req.Header = st.BehaviorHints.ProxyHeaders.Request
 				}
@@ -413,6 +413,7 @@ func (s *server) addonRoutes(api huma.API) {
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
 			}
+			j = own(j)
 			out.Job = &j
 			return body(out), nil
 		})
@@ -452,6 +453,10 @@ func (s *server) addonRoutes(api huma.API) {
 				}
 				return -1
 			}, in.Body.Lang), "-")
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
 			video := "/" + strings.TrimPrefix(in.Body.Video, "/")
 			stem := strings.TrimSuffix(video, path.Ext(video))
 			if lang != "" {
@@ -462,7 +467,7 @@ func (s *server) addonRoutes(api huma.API) {
 				if i > 0 {
 					p = stem + "." + strconv.Itoa(i+1) + ext
 				}
-				if err := s.FS.WriteNew(p, data); err == nil {
+				if err := f.WriteNew(p, data); err == nil {
 					return body(map[string]string{"path": p}), nil
 				}
 			}
@@ -476,13 +481,7 @@ func (s *server) addonRoutes(api huma.API) {
 func (s *server) addonProxy(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	target := q.Get("url")
-	if q.Get("sig") != "" {
-		if !s.FS.Verify("addon-proxy/"+target, q.Get("exp"), q.Get("sig")) {
-			http.Error(w, "invalid or expired link", http.StatusForbidden)
-			return
-		}
-	} else if rank[s.scope(r.Header.Get("Authorization"))] < rank["read"] {
-		http.Error(w, "missing or invalid token", http.StatusUnauthorized)
+	if _, _, ok := s.access(w, r, "addon-proxy/"+target); !ok {
 		return
 	}
 	if err := s.needAddons(); err != nil {
@@ -531,7 +530,11 @@ func (s *server) addonProxyRoutes(api huma.API) {
 			if err := s.needAddons(); err != nil {
 				return nil, err
 			}
-			q, err := s.FS.Sign("addon-proxy/"+in.Body.URL, 6*time.Hour)
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			q, err := f.Sign("addon-proxy/"+in.Body.URL, 6*time.Hour)
 			if err != nil {
 				return nil, err
 			}

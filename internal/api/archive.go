@@ -26,7 +26,11 @@ func (s *server) archiveRoutes(api huma.API) {
 			Path string `query:"path" required:"true" doc:"the archive, inside the download folder"`
 			Dir  string `query:"dir" default:"." doc:"folder inside the archive"`
 		}) (*struct{ Body []fsapi.Entry }, error) {
-			afs, closeFn, err := s.openArchive(ctx, in.Path)
+			f, err := s.fs(ctx)
+			if err != nil {
+				return nil, err
+			}
+			afs, closeFn, err := s.openArchive(ctx, f, in.Path)
 			if err != nil {
 				return nil, err
 			}
@@ -54,8 +58,8 @@ func (s *server) archiveRoutes(api huma.API) {
 		})
 }
 
-func (s *server) openArchive(ctx context.Context, p string) (fs.FS, func(), error) {
-	f, err := s.FS.Open(p)
+func (s *server) openArchive(ctx context.Context, fsys *fsapi.FS, p string) (fs.FS, func(), error) {
+	f, err := fsys.Open(p)
 	if err != nil {
 		return nil, nil, fsErr(err)
 	}
@@ -81,22 +85,17 @@ func archiveErr(err error) error {
 // archiveRaw streams one file out of an archive (read token, or a signed link to the archive).
 func (s *server) archiveRaw(w http.ResponseWriter, r *http.Request) {
 	p := r.PathValue("path")
-	q := r.URL.Query()
-	if q.Get("sig") != "" {
-		if !s.FS.Verify(p, q.Get("exp"), q.Get("sig")) {
-			http.Error(w, "invalid or expired link", http.StatusForbidden)
-			return
-		}
-	} else if rank[s.scope(r.Header.Get("Authorization"))] < rank["read"] {
-		http.Error(w, "missing or invalid token", http.StatusUnauthorized)
+	fsys, _, ok := s.access(w, r, p)
+	if !ok {
 		return
 	}
+	q := r.URL.Query()
 	entry := strings.Trim(q.Get("entry"), "/")
 	if !fs.ValidPath(entry) || entry == "." {
 		http.Error(w, "invalid entry", http.StatusBadRequest)
 		return
 	}
-	afs, closeFn, err := s.openArchive(r.Context(), p)
+	afs, closeFn, err := s.openArchive(r.Context(), fsys, p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

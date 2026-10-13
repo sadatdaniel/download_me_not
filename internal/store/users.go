@@ -245,3 +245,58 @@ func SetPrefs(db *sql.DB, id, prefs string) error {
 	_, err := db.Exec(`UPDATE users SET prefs = ? WHERE id = ?`, prefs, id)
 	return err
 }
+
+func UserByName(db *sql.DB, name string) (User, error) {
+	return scanUser(db.QueryRow(`SELECT `+userCols+` FROM users WHERE name = ?`, strings.TrimSpace(name)))
+}
+
+// HasUsers: once a user exists, every device must sign in as someone.
+func HasUsers(db *sql.DB) (bool, error) {
+	var ok bool
+	err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM users)`).Scan(&ok)
+	return ok, err
+}
+
+// UserDevices lists the token hashes bound to a user.
+func UserDevices(db *sql.DB, userID string) ([]string, error) {
+	rows, err := db.Query(`SELECT token_hash FROM device_users WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// ErrPrefsFull keeps one user's preferences from growing without bound.
+var ErrPrefsFull = errors.New("preferences are full (1 MiB)")
+
+// SetPref sets one key of a user's preferences to a JSON value; value nil removes the key.
+// key must not contain '"' (the API restricts it to letters, digits, '_' and '-').
+func SetPref(db *sql.DB, id, key string, value []byte) error {
+	var r sql.Result
+	var err error
+	if value == nil {
+		r, err = db.Exec(`UPDATE users SET prefs = json_remove(prefs, '$."'||?||'"') WHERE id = ?`, key, id)
+	} else {
+		r, err = db.Exec(`UPDATE users SET prefs = json_set(prefs, '$."'||?||'"', json(?)) WHERE id = ?
+			AND length(prefs) + ? <= 1048576`, key, string(value), id, len(value))
+	}
+	if err != nil {
+		return err
+	}
+	if n, _ := r.RowsAffected(); n == 0 {
+		if _, err := GetUser(db, id); err != nil {
+			return err
+		}
+		return ErrPrefsFull
+	}
+	return nil
+}
