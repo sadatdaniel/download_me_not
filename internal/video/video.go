@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -36,6 +37,7 @@ type Media struct {
 	Duration  float64  `json:"duration,omitempty"`
 	Extractor string   `json:"extractor"`
 	Formats   []Format `json:"formats"`
+	Subtitles []string `json:"subtitles,omitempty" doc:"languages with real subtitles (not automatic captions)"`
 }
 
 // Preset is a named choice for the app and CLI; Format is a yt-dlp format selector.
@@ -118,6 +120,7 @@ func (r Runner) Probe(ctx context.Context, url string) (Media, error) {
 		ID, Title, Thumbnail string
 		Duration             float64
 		Extractor            string `json:"extractor_key"`
+		Subtitles            map[string]json.RawMessage
 		Formats              []struct {
 			FormatID       string  `json:"format_id"`
 			Ext            string  `json:"ext"`
@@ -135,6 +138,12 @@ func (r Runner) Probe(ctx context.Context, url string) (Media, error) {
 		return Media{}, fmt.Errorf("yt-dlp output: %w", err)
 	}
 	info := Media{ID: raw.ID, Title: raw.Title, Thumbnail: raw.Thumbnail, Duration: raw.Duration, Extractor: raw.Extractor}
+	for lang := range raw.Subtitles {
+		if lang != "live_chat" {
+			info.Subtitles = append(info.Subtitles, lang)
+		}
+	}
+	sort.Strings(info.Subtitles)
 	for _, f := range raw.Formats {
 		size := f.Filesize
 		if size == 0 {
@@ -168,14 +177,48 @@ func Selector(choice string) ([]string, error) {
 	return []string{"-f", choice}, nil
 }
 
+// Options are the extra choices of a download: subtitle languages (saved as .srt next to the video, where the
+// player finds them) and the container for video (mp4 or mkv; empty = what yt-dlp picks).
+type Options struct {
+	Subs      []string
+	Container string
+}
+
+var langRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$`)
+
+// Args checks the options and turns them into yt-dlp arguments.
+func (o Options) Args() ([]string, error) {
+	var a []string
+	switch o.Container {
+	case "":
+	case "mp4", "mkv":
+		a = append(a, "--merge-output-format", o.Container) // ponytail: single-file formats keep their own container; remux if people ask
+	default:
+		return nil, fmt.Errorf("container must be mp4 or mkv, not %q", o.Container)
+	}
+	if len(o.Subs) > 0 {
+		for _, l := range o.Subs {
+			if !langRe.MatchString(l) {
+				return nil, fmt.Errorf("bad subtitle language %q", l)
+			}
+		}
+		a = append(a, "--write-subs", "--sub-langs", strings.Join(o.Subs, ","), "--convert-subs", "srt")
+	}
+	return a, nil
+}
+
 // Download fetches url into dir with the chosen format and returns the final file path.
 // yt-dlp resumes its own .part files, so a cancelled download continues on the next call.
-func (r Runner) Download(ctx context.Context, url, choice, dir string, progress func(done, total int64)) (string, error) {
+func (r Runner) Download(ctx context.Context, url, choice string, opt Options, dir string, progress func(done, total int64)) (string, error) {
 	sel, err := Selector(choice)
 	if err != nil {
 		return "", err
 	}
-	args := append(r.base(), sel...)
+	extra, err := opt.Args()
+	if err != nil {
+		return "", err
+	}
+	args := append(append(r.base(), sel...), extra...)
 	args = append(args,
 		"--newline", "--progress", "--no-simulate", "--no-mtime",
 		"--progress-template", "download:DMNPROG %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",

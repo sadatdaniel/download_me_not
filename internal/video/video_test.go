@@ -56,7 +56,7 @@ func TestProbeAndDownload(t *testing.T) {
 	}
 	dir := t.TempDir()
 	var calls int
-	file, err := r.Download(ctx, page, "best", dir, func(done, total int64) { calls++ })
+	file, err := r.Download(ctx, page, "best", Options{}, dir, func(done, total int64) { calls++ })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,5 +94,20 @@ func TestGuardedProxy(t *testing.T) {
 	r.Proxy = px.URL
 	if _, err := r.Probe(context.Background(), page); err == nil {
 		t.Fatal("yt-dlp reached a loopback page through the guarded proxy")
+	}
+}
+
+func TestOptions(t *testing.T) {
+	a, err := Options{Subs: []string{"en", "pt-BR"}, Container: "mkv"}.Args()
+	if err != nil || strings.Join(a, " ") != "--merge-output-format mkv --write-subs --sub-langs en,pt-BR --convert-subs srt" {
+		t.Fatalf("args: %v %v", a, err)
+	}
+	if a, err := (Options{}).Args(); err != nil || len(a) != 0 {
+		t.Fatalf("no options must add nothing: %v %v", a, err)
+	}
+	for _, bad := range []Options{{Container: "avi"}, {Subs: []string{"en,--exec=x"}}, {Subs: []string{"--exec"}}} {
+		if _, err := bad.Args(); err == nil {
+			t.Fatalf("accepted %+v", bad)
+		}
 	}
 }

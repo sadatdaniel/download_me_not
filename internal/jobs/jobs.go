@@ -112,8 +112,10 @@ type webMeta struct {
 }
 
 type videoMeta struct {
-	Format string            `json:"format,omitempty"` // preset or yt-dlp format id
-	Header map[string]string `json:"header,omitempty"`
+	Format    string            `json:"format,omitempty"` // preset or yt-dlp format id
+	Subs      []string          `json:"subs,omitempty"`
+	Container string            `json:"container,omitempty"`
+	Header    map[string]string `json:"header,omitempty"`
 }
 
 type torMeta struct {
@@ -175,6 +177,9 @@ type AddRequest struct {
 	// Format makes it a video job (yt-dlp): a preset (best, 1080p, 720p, 480p, m4a, opus, mp3) or a
 	// format id from /v1/probe. Without it, a URL that turns out to be a web page becomes a video job.
 	Format string `json:"format,omitempty"`
+	// Video jobs: subtitle languages to save as .srt next to the video, and mp4 or mkv for the video.
+	Subs      []string `json:"subs,omitempty"`
+	Container string   `json:"container,omitempty" enum:"mp4,mkv"`
 	// User owns the job; set by the API from the signed-in user, never by the client. Empty = no users yet.
 	User string `json:"-"`
 }
@@ -225,7 +230,11 @@ func (m *Manager) Add(r AddRequest) (store.Job, bool, error) {
 				return store.Job{}, false, err
 			}
 			j.Kind = "video"
-			meta = videoMeta{Format: r.Format, Header: r.Header}
+			opt := video.Options{Subs: r.Subs, Container: r.Container}
+			if _, err := opt.Args(); err != nil {
+				return store.Job{}, false, err
+			}
+			meta = videoMeta{Format: r.Format, Header: r.Header, Subs: r.Subs, Container: r.Container}
 		}
 	}
 	if m.o.Allowed != nil && !m.o.Allowed(j.Kind) {

@@ -38,7 +38,7 @@ func (m *Manager) runVideo(ctx context.Context, r *runner, j store.Job) error {
 	if err := os.MkdirAll(m.userAbs(j.User), 0o755); err != nil {
 		return err
 	}
-	file, err := vr.Download(ctx, j.Source, meta.Format, m.userAbs(j.User), func(done, total int64) {
+	file, err := vr.Download(ctx, j.Source, meta.Format, video.Options{Subs: meta.Subs, Container: meta.Container}, m.userAbs(j.User), func(done, total int64) {
 		r.mu.Lock()
 		r.vdone, r.vtotal = done, total
 		r.mu.Unlock()
