@@ -211,7 +211,9 @@ type cached struct {
 }
 
 const (
-	maxBody      = 8 << 20
+	maxBody = 8 << 20
+	// UserAgent names this server to add-ons; some sites refuse Go's default "Go-http-client".
+	UserAgent    = "download_me_not (+https://github.com/sadatdaniel/download_me_not)"
 	defaultCache = 10 * time.Minute
 )
 
@@ -230,11 +232,15 @@ func (c *Client) get(ctx context.Context, u string, out any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", UserAgent)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return errors.New("the add-on's site refused this server (403); some add-ons block servers in data centres such as cloud VMs")
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("add-on answered %s", resp.Status)
 	}

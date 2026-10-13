@@ -434,6 +434,7 @@ func (s *server) addonRoutes(api huma.API) {
 			if err != nil || (req.URL.Scheme != "https" && req.URL.Scheme != "http") {
 				return nil, huma.Error400BadRequest("invalid subtitle URL")
 			}
+			req.Header.Set("User-Agent", addons.UserAgent)
 			resp, err := s.Addons.HTTP.Do(req)
 			if err != nil {
 				return nil, huma.Error502BadGateway(err.Error())
@@ -493,6 +494,7 @@ func (s *server) addonProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid url", http.StatusBadRequest)
 		return
 	}
+	req.Header.Set("User-Agent", addons.UserAgent)
 	resp, err := s.Addons.HTTP.Do(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
