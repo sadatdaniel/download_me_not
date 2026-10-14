@@ -125,3 +125,4 @@
 - 2026-10-14: security audit of the server (auth, sign-in, files, SSRF, config writes, tools) and app pinning; five fixes with tests (see On main). Not audited: engine, httpdl, extract, update, cookies, addons internals, install.sh, the lite panel.
 - 2026-10-14: QR pairing removed in both repos (owner decision); admin-key design proposed (STATUS next action 0).
 - 2026-10-14: Paste link button replaces the clipboard watcher (app). Proposed and waiting: installer port check and a less common default port than 8080; pinning CI actions, GoReleaser and base images, Dependabot for the app repo.
+- 2026-10-14: pinned CI actions (SHA), GoReleaser v2.18.3, base images (digest); Dependabot for docker here and pub + actions in the app repo.
