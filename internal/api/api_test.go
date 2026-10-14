@@ -232,7 +232,7 @@ func TestTokenAddedWhileRunning(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond) // reload is rate-limited to once a second
 	config.Set(cfgPath, "auth.tokens", []map[string]any{{"name": "phone", "hash": HashToken("new-tok"), "scope": "read"}})
 	if code, _ := call(t, srv, "GET", "/v1/jobs", "new-tok", ""); code != 200 {
-		t.Fatalf("token added by pair not picked up: %d", code)
+		t.Fatalf("token added on the command line not picked up: %d", code)
 	}
 }
 
@@ -324,40 +324,20 @@ func TestDriveConnect(t *testing.T) {
 	}
 }
 
-func TestPair(t *testing.T) {
-	srv, _ := newTestServer(t)
-	req := `{"name":"phone","url":"https://example.test:8080"}`
-	if code, _ := call(t, srv, "POST", "/v1/pair", "write-tok", req); code != 403 {
-		t.Fatalf("write token may not pair: %d", code)
+func TestSameDeviceNameReplacesToken(t *testing.T) {
+	_, cfgPath := newTestServer(t)
+	first, err := AddToken(cfgPath, "phone", "write")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if code, _ := call(t, srv, "POST", "/v1/pair", "admin-tok", `{"name":"phone","url":"file:///etc"}`); code != 400 && code != 422 {
-		t.Fatalf("bad url accepted: %d", code)
+	second, _ := AddToken(cfgPath, "phone", "write")
+	_, c, _ := config.Load(cfgPath, nil)
+	hashes := map[string]bool{}
+	for _, tk := range c.Auth.Tokens {
+		hashes[tk.Hash] = true
 	}
-	pair := func() string {
-		code, b := call(t, srv, "POST", "/v1/pair", "admin-tok", req)
-		var out pairOut
-		if code != 200 || json.Unmarshal([]byte(b), &out) != nil || !strings.HasPrefix(out.QR, "data:image/png;base64,") {
-			t.Fatalf("%d %s", code, b)
-		}
-		u, _ := url.Parse(out.Payload)
-		if u.Query().Get("url") != "https://example.test:8080" {
-			t.Fatalf("payload %s", out.Payload)
-		}
-		return u.Query().Get("token")
-	}
-	first := pair()
-	if code, _ := call(t, srv, "POST", "/v1/jobs/x/pause", first, ""); code == 401 || code == 403 {
-		t.Fatalf("new device token (default write) refused: %d", code)
-	}
-	second := pair()
-	if code, _ := call(t, srv, "GET", "/v1/jobs", first, ""); code != 401 {
-		t.Fatalf("re-pairing must revoke the old token: %d", code)
-	}
-	if code, _ := call(t, srv, "GET", "/v1/jobs", second, ""); code != 200 {
-		t.Fatalf("second token: %d", code)
-	}
-	if code, _ := call(t, srv, "GET", "/v1/jobs", "admin-tok", ""); code != 200 {
-		t.Fatalf("other tokens must survive: %d", code)
+	if hashes[HashToken(first)] || !hashes[HashToken(second)] || !hashes[HashToken("admin-tok")] {
+		t.Fatalf("want only the newer phone token plus the others: %+v", c.Auth.Tokens)
 	}
 }
 

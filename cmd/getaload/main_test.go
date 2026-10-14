@@ -1,10 +1,8 @@
 package main
 
 import (
-	"net/url"
 	"testing"
 
-	"github.com/sadatdaniel/getaload/internal/api"
 	"github.com/sadatdaniel/getaload/internal/engine"
 )
 
@@ -45,13 +43,7 @@ func TestParseSeed(t *testing.T) {
 	}
 }
 
-func TestPairPayload(t *testing.T) {
-	p := api.PairPayload("https://192.168.1.5:8080", "getaload_abc", "ff00")
-	u, err := url.Parse(p)
-	if err != nil || u.Scheme != "getaload" || u.Query().Get("token") != "getaload_abc" || u.Query().Get("fp") != "ff00" ||
-		u.Query().Get("url") != "https://192.168.1.5:8080" {
-		t.Fatalf("%s %v", p, err)
-	}
+func TestLanAddr(t *testing.T) {
 	if got := lanAddr("10.0.0.2:8080"); got != "10.0.0.2:8080" {
 		t.Fatalf("specific host changed: %s", got)
 	}

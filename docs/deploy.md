@@ -97,7 +97,7 @@ To use a host folder for downloads, replace the `downloads` volume with e.g.
 service user). To use the CLI as a user (here or from another computer), sign it in once:
 `getaload --url https://<server>:8080 --fingerprint <sha256> login NAME` prints a token for `GETALOAD_TOKEN`.
 
-**Tokens without a user** (`sudo getaload setup --name <name> --scope read|write|admin`, `sudo getaload pair`) are for
+**Tokens without a user** (`sudo getaload setup --name <name> --scope read|write|admin`) are for
 scripts and server-wide settings: once users exist they no longer reach anyone's downloads or files.
 
 ## 4. Ports and firewall

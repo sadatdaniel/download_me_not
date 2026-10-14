@@ -1,5 +1,5 @@
 // Package tlsutil makes the self-signed certificate for LAN access (scope §5.10 mode 1). The app
-// pins its SHA-256 fingerprint, received through the pairing QR code, so no CA is involved.
+// pins its SHA-256 fingerprint (shown by `getaload connect` and confirmed in the app on first use), so no CA is involved.
 package tlsutil
 
 import (

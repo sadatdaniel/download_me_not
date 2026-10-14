@@ -32,7 +32,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/sadatdaniel/getaload/internal/acme"
@@ -81,11 +80,11 @@ func main() {
 	pf.BoolVar(&jsonOut, "json", false, "JSON output for scripting")
 	pf.StringVar(&srvURL, "url", envOr("GETALOAD_URL", "http://127.0.0.1:8080"), "server URL (env GETALOAD_URL)")
 	pf.StringVar(&srvToken, "token", os.Getenv("GETALOAD_TOKEN"), "API token (env GETALOAD_TOKEN)")
-	pf.StringVar(&srvFP, "fingerprint", os.Getenv("GETALOAD_FINGERPRINT"), "pin a self-signed server certificate by SHA-256 (env GETALOAD_FINGERPRINT; shown by `getaload pair`)")
+	pf.StringVar(&srvFP, "fingerprint", os.Getenv("GETALOAD_FINGERPRINT"), "pin a self-signed server certificate by SHA-256 (env GETALOAD_FINGERPRINT; shown by `getaload connect`)")
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
-		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), pairCmd(), copyCmd(), toolsCmd(), updateCmd(), uninstallCmd(), healthCmd(), userCmd(), loginCmd(), connectCmd())
+		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), copyCmd(), toolsCmd(), updateCmd(), uninstallCmd(), healthCmd(), userCmd(), loginCmd(), connectCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -1253,55 +1252,6 @@ func lanAddr(listen string) string {
 		}
 	}
 	return listen
-}
-
-func pairCmd() *cobra.Command {
-	c := &cobra.Command{Use: "pair", Short: "Show a QR code that connects the Android app (new token, URL, certificate fingerprint)"}
-	name := c.Flags().String("name", "phone", "device name; pairing again with the same name replaces its token")
-	scope := c.Flags().String("scope", "write", "token scope for the device: read, write or admin")
-	override := c.Flags().String("url", "", "server URL as the phone sees it (default: this machine's LAN address)")
-	c.RunE = func(*cobra.Command, []string) error {
-		_, cfg, err := config.Load(cfgPath, nil)
-		if err != nil {
-			return err
-		}
-		mode := tlsMode(cfg)
-		scheme, fp := "https", ""
-		switch mode {
-		case "off":
-			scheme = "http"
-		case "self-signed":
-			cert, err := tlsutil.SelfSigned(filepath.Join(cfg.Paths.Data, "tls"))
-			if err != nil {
-				return err
-			}
-			fp, _ = tlsutil.Fingerprint(cert)
-		}
-		u := *override
-		if u == "" {
-			host := lanAddr(cfg.Server.Listen)
-			if mode == "acme" && cfg.Server.Domain != "" {
-				host = cfg.Server.Domain
-			}
-			u = scheme + "://" + host
-		}
-		tok, err := api.AddToken(cfgPath, *name, *scope)
-		if err != nil {
-			return err
-		}
-		payload := api.PairPayload(u, tok, fp)
-		return show(map[string]string{"payload": payload, "url": u, "fingerprint": fp}, func() {
-			qrterminal.GenerateHalfBlock(payload, qrterminal.L, os.Stdout)
-			fmt.Printf("\nScan with the app. Server %s, device %q (%s).\n", u, *name, *scope)
-			if fp != "" {
-				fmt.Printf("Certificate fingerprint (SHA-256): %s\n", fp)
-			}
-			if mode == "off" && !loopback(cfg.Server.Listen) {
-				fmt.Println("Warning: TLS is off. Only do this behind a reverse proxy, tunnel or VPN.")
-			}
-		})
-	}
-	return c
 }
 
 // httpClient talks to the server; with --fingerprint it accepts exactly that certificate (the same

@@ -53,7 +53,7 @@ type Deps struct {
 	Updates        *Updates         // server self-update; nil = not offered (e.g. tests)
 	GoogleEndpoint *oauth2.Endpoint // tests point Drive sign-in at a fake server; nil = Google
 	Addons         *addons.Client   // Stremio add-on client (guarded HTTP); nil = feature not offered
-	Fingerprint    string           // SHA-256 of the self-signed certificate, for pairing; empty = none to pin
+	Fingerprint    string           // SHA-256 of the self-signed certificate, returned at sign-in; empty = none to pin
 }
 
 var rank = map[string]int{"read": 1, "write": 2, "admin": 3}
@@ -231,7 +231,6 @@ func (s *server) routes(api huma.API) {
 	s.providerRoutes(api)
 	s.toolRoutes(api)
 	s.updateRoutes(api)
-	s.pairRoutes(api)
 	s.archiveRoutes(api)
 	s.portRoutes(api)
 	s.cleanupRoutes(api)
