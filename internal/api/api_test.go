@@ -125,8 +125,9 @@ func TestAuthAndScopes(t *testing.T) {
 		{"POST", "/v1/cookies", "admin-tok", `{"domain":"example.com","content":".example.com\tTRUE\t/\tTRUE\t0\tsid\tSECRETVALUE"}`, 200},
 		{"DELETE", "/v1/cookies/nope.org", "admin-tok", "", 404},
 		{"PUT", "/v1/limits", "read-tok", `{"down":1000,"up":0}`, 403},
-		{"PUT", "/v1/limits", "write-tok", `{"down":1000,"up":0}`, 204},
-		{"PUT", "/v1/limits", "write-tok", `{"down":-1,"up":0}`, 422},
+		{"PUT", "/v1/limits", "write-tok", `{"down":1000,"up":0}`, 403}, // server-wide: the owner only
+		{"PUT", "/v1/limits", "admin-tok", `{"down":1000,"up":0}`, 204},
+		{"PUT", "/v1/limits", "admin-tok", `{"down":-1,"up":0}`, 422},
 		{"GET", "/v1/limits", "read-tok", "", 200},
 		{"POST", "/v1/fs/copy", "write-tok", `{"from":"/video.mp4","to":"/copy.mp4"}`, 204},
 		{"GET", "/v1/zip/", "read-tok", "", 200},
@@ -162,6 +163,18 @@ func TestSignedStream(t *testing.T) {
 	got, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 206 || string(got) != "234" {
 		t.Fatalf("signed range: %d %q", resp.StatusCode, got)
+	}
+	// Files share the web app's origin: a downloaded page must never run scripts there.
+	if csp := resp.Header.Get("Content-Security-Policy"); csp != "sandbox" {
+		t.Fatalf("raw files need CSP sandbox, got %q", csp)
+	}
+	resp, err = http.Get(srv.URL + u + "&dl=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if cd := resp.Header.Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment") {
+		t.Fatalf("dl=1 must download: %q", cd)
 	}
 	if code, _ := call(t, srv, "GET", strings.Replace(u, "video.mp4", "other.mp4", 1), "", ""); code != 403 {
 		t.Fatalf("signature reused for another path: %d", code)

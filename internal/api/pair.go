@@ -8,6 +8,7 @@ import (
 	"net/url"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/knadh/koanf/v2"
 	"rsc.io/qr"
 
 	"github.com/sadatdaniel/getaload/internal/config"
@@ -19,21 +20,12 @@ func AddToken(cfgPath, name, scope string) (string, error) {
 	if rank[scope] == 0 {
 		return "", fmt.Errorf("scope must be read, write or admin")
 	}
-	_, cfg, err := config.Load(cfgPath, nil) // fresh from disk: the CLI may have added tokens meanwhile
-	if err != nil {
-		return "", err
-	}
 	b := make([]byte, 32)
 	rand.Read(b)
 	tok := "getaload_" + base64.RawURLEncoding.EncodeToString(b)
-	toks := []map[string]any{}
-	for _, t := range cfg.Auth.Tokens {
-		if t.Name != name {
-			toks = append(toks, map[string]any{"name": t.Name, "hash": t.Hash, "scope": t.Scope})
-		}
-	}
-	toks = append(toks, map[string]any{"name": name, "hash": HashToken(tok), "scope": scope})
-	return tok, config.Set(cfgPath, "auth.tokens", toks)
+	_, err := editTokens(cfgPath, func(t config.Token) bool { return t.Name == name },
+		map[string]any{"name": name, "hash": HashToken(tok), "scope": scope})
+	return tok, err
 }
 
 // PairPayload is what the pairing QR code carries: where the server is, a fresh token for this
@@ -81,21 +73,30 @@ func (s *server) pairRoutes(api huma.API) {
 
 // RemoveTokens deletes the tokens that match from the config file and returns their hashes.
 func RemoveTokens(cfgPath string, drop func(config.Token) bool) ([]string, error) {
-	_, cfg, err := config.Load(cfgPath, nil)
-	if err != nil {
-		return nil, err
-	}
+	return editTokens(cfgPath, drop, nil)
+}
+
+// editTokens drops the matching tokens and appends add (if any) in one locked read-change-write of the config
+// file, read fresh from disk (the CLI may have added tokens meanwhile). It returns the dropped hashes.
+func editTokens(cfgPath string, drop func(config.Token) bool, add map[string]any) ([]string, error) {
 	var gone []string
-	toks := []map[string]any{}
-	for _, t := range cfg.Auth.Tokens {
-		if drop(t) {
-			gone = append(gone, t.Hash)
-		} else {
-			toks = append(toks, map[string]any{"name": t.Name, "hash": t.Hash, "scope": t.Scope})
+	err := config.Update(cfgPath, func(k *koanf.Koanf) error {
+		var ts []config.Token
+		if err := k.Unmarshal("auth.tokens", &ts); err != nil {
+			return err
 		}
-	}
-	if len(gone) == 0 {
-		return nil, nil
-	}
-	return gone, config.Set(cfgPath, "auth.tokens", toks)
+		toks := []map[string]any{}
+		for _, t := range ts {
+			if drop(t) {
+				gone = append(gone, t.Hash)
+			} else {
+				toks = append(toks, map[string]any{"name": t.Name, "hash": t.Hash, "scope": t.Scope})
+			}
+		}
+		if add != nil {
+			toks = append(toks, add)
+		}
+		return k.Set("auth.tokens", toks)
+	})
+	return gone, err
 }

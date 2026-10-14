@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"code.dny.dev/ssrf"
@@ -35,6 +36,8 @@ func Client() *http.Client {
 // ponytail: listen on loopback only; any local process may use it, but it can only reach public addresses.
 type Proxy struct {
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
+	once sync.Once
+	t    *http.Transport // one pool for plain-HTTP requests (a new one per request leaked its idle connections)
 }
 
 func NewProxy() *Proxy { return &Proxy{Dial: Dialer().DialContext} }
@@ -52,8 +55,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	out.RequestURI = ""
 	out.Header.Del("Proxy-Connection")
 	out.Header.Del("Proxy-Authorization")
-	t := &http.Transport{DialContext: p.Dial, Proxy: nil}
-	resp, err := t.RoundTrip(out)
+	p.once.Do(func() { p.t = &http.Transport{DialContext: p.Dial, Proxy: nil, IdleConnTimeout: 90 * time.Second} })
+	resp, err := p.t.RoundTrip(out)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return

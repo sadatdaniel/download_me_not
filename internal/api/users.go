@@ -88,6 +88,10 @@ func (s *server) fs(ctx context.Context) (*fsapi.FS, error) {
 // access authorizes a plain HTTP route (players, downloads): a signed link, verified in the scope of the
 // user it names, or a read token of a signed-in device. signed is what the link was signed for.
 func (s *server) access(w http.ResponseWriter, r *http.Request, signed string) (*fsapi.FS, string, bool) {
+	// Downloaded files share the web app's origin: a page or SVG opened from here must not run scripts that could
+	// read the app's sign-in. sandbox gives it an origin of its own, with scripts off; media still plays.
+	w.Header().Set("Content-Security-Policy", "sandbox")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	q := r.URL.Query()
 	if q.Get("sig") != "" {
 		u := q.Get("u")

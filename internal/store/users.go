@@ -131,9 +131,8 @@ func GetUser(db *sql.DB, id string) (User, error) {
 // further miss up to an hour; a right PIN resets the count.
 func CheckPIN(db *sql.DB, id, pin string) (User, error) {
 	var h, salt string
-	var failed int
 	var locked int64
-	err := db.QueryRow(`SELECT pin, salt, failed, locked_until FROM users WHERE id = ?`, id).Scan(&h, &salt, &failed, &locked)
+	err := db.QueryRow(`SELECT pin, salt, locked_until FROM users WHERE id = ?`, id).Scan(&h, &salt, &locked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNoUser
 	}
@@ -148,17 +147,21 @@ func CheckPIN(db *sql.DB, id, pin string) (User, error) {
 		return User{}, err
 	}
 	if !validPIN(pin) || subtle.ConstantTimeCompare([]byte(got), []byte(h)) != 1 {
-		failed++
-		var until int64
-		if failed >= 5 {
-			wait := min(time.Minute<<(failed-5), time.Hour)
-			until = time.Now().Add(wait).Unix()
+		// Counted in the database in one step: guesses sent at the same moment each count.
+		var failed int
+		if err := db.QueryRow(`UPDATE users SET failed = failed + 1 WHERE id = ? RETURNING failed`, id).Scan(&failed); err != nil {
+			return User{}, err
 		}
-		db.Exec(`UPDATE users SET failed = ?, locked_until = ? WHERE id = ?`, failed, until, id)
-		if until > 0 {
-			return User{}, ErrLocked{time.Unix(until, 0)}
+		if failed < 5 {
+			return User{}, ErrBadPIN
 		}
-		return User{}, ErrBadPIN
+		wait := time.Hour // a shift past ~28 would overflow and end the lock: cap before shifting
+		if failed-5 < 6 {
+			wait = time.Minute << (failed - 5)
+		}
+		until := time.Now().Add(wait)
+		db.Exec(`UPDATE users SET locked_until = ? WHERE id = ?`, until.Unix(), id)
+		return User{}, ErrLocked{until}
 	}
 	db.Exec(`UPDATE users SET failed = 0, locked_until = 0 WHERE id = ?`, id)
 	return GetUser(db, id)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/knadh/koanf/parsers/yaml"
@@ -166,11 +167,23 @@ func LoadFile(path string) (*koanf.Koanf, bool, error) {
 
 // Set writes one key into the config file only (not env/flags), creating the file if needed.
 func Set(path, key string, value any) error {
+	return Update(path, func(k *koanf.Koanf) error { return k.Set(key, value) })
+}
+
+// writeMu serializes read-change-write of the config file: two sign-ins at once must not lose a token.
+// ponytail: within one process; a CLI command writing at the same instant as the server can still lose its
+// change (never corrupt the file). A file lock (flock) if that ever matters.
+var writeMu sync.Mutex
+
+// Update reads the config file, lets change edit it and writes it back, as one step within this process.
+func Update(path string, change func(k *koanf.Koanf) error) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
 	k, _, err := LoadFile(path)
 	if err != nil {
 		return err
 	}
-	if err := k.Set(key, value); err != nil {
+	if err := change(k); err != nil {
 		return err
 	}
 	b, err := k.Marshal(yaml.Parser())
@@ -180,9 +193,19 @@ func Set(path, key string, value any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	// Write-then-rename so a crash never leaves a half-written config.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	// Write-then-rename so a crash never leaves a half-written config; a temp file of its own (mode 0600) per
+	// write, so another process writing at the same time can't mix its bytes into ours.
+	f, err := os.CreateTemp(filepath.Dir(path), ".config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	// Keep the owner: `sudo getaload pair` must not turn the service's config into a root-only file.

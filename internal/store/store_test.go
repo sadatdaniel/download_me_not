@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestOpenMigrateReopen(t *testing.T) {
@@ -147,5 +148,27 @@ func TestUsers(t *testing.T) {
 	}
 	if u, _ := DeviceUser(db, "tokhash"); u != "" {
 		t.Fatalf("binding survived the user: %q", u)
+	}
+}
+
+// The lock grows to an hour and stays there: a long run of wrong PINs must never end it (the doubling once
+// overflowed after 33 misses and unlocked the user).
+func TestPINLockNeverExpiresEarly(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "u.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	u, err := CreateUser(db, "A", "1234")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`UPDATE users SET failed = 40 WHERE id = ?`, u.ID)
+	var l ErrLocked
+	if _, err := CheckPIN(db, u.ID, "0000"); !errors.As(err, &l) || time.Until(l.Until) < 59*time.Minute {
+		t.Fatalf("want an hour's lock, got %v", err)
+	}
+	if _, err := CheckPIN(db, u.ID, "1234"); !errors.As(err, &l) {
+		t.Fatalf("the right PIN must wait for the lock too: %v", err)
 	}
 }

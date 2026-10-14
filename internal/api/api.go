@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -409,7 +410,7 @@ func (s *server) routes(api huma.API) {
 			d, u := s.Limits.Get()
 			return body(limitsBody{d, u}), nil
 		})
-	huma.Register(api, op("set-limits", "PUT", "/v1/limits", "write", "Change global bandwidth limits (applies immediately, saved to config)"),
+	huma.Register(api, op("set-limits", "PUT", "/v1/limits", "admin", "Change global bandwidth limits (the owner; applies immediately, saved to config)"),
 		func(ctx context.Context, in *struct{ Body limitsBody }) (*struct{}, error) {
 			s.Limits.Set(in.Body.Down, in.Body.Up)
 			if err := config.Set(s.CfgPath, "limits.down", in.Body.Down); err != nil {
@@ -440,6 +441,9 @@ func (s *server) raw(w http.ResponseWriter, r *http.Request) {
 	f, _, ok := s.access(w, r, p)
 	if !ok {
 		return
+	}
+	if r.URL.Query().Get("dl") == "1" { // the browser saves it instead of showing it
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": path.Base(p)}))
 	}
 	f.Serve(w, r, p)
 }

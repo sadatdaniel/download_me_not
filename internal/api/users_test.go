@@ -4,13 +4,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/sadatdaniel/getaload/internal/config"
 )
 
 func login(t *testing.T, srv *httptest.Server, name, pin, device string) (string, string) {
@@ -244,5 +248,25 @@ func TestUsersAreSeparate(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dl, "users", bobID)); !os.IsNotExist(err) {
 		t.Fatalf("Bob's folder kept: %v", err)
+	}
+}
+
+// Sign-ins at the same moment each write the config file; none may lose another's token.
+func TestTokensSurviveConcurrentSignIns(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := AddToken(cfg, fmt.Sprint("dev", i), "write"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	_, c, err := config.Load(cfg, nil)
+	if err != nil || len(c.Auth.Tokens) != 20 {
+		t.Fatalf("want 20 tokens, got %d (%v)", len(c.Auth.Tokens), err)
 	}
 }
