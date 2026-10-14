@@ -77,6 +77,10 @@ func serveApp(w http.ResponseWriter, r *http.Request, appFS fs.FS, version strin
 		"style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; "+
 		"font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://fonts.gstatic.com; "+
 		"worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+	// Cross-origin isolation lets the app's renderer use threads. credentialless (not require-corp) keeps add-on
+	// posters from other sites loading: they are fetched without cookies instead of being blocked.
+	h.Set("Cross-Origin-Opener-Policy", "same-origin")
+	h.Set("Cross-Origin-Embedder-Policy", "credentialless")
 	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 	if name == "" {
 		name = "index.html"

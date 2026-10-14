@@ -36,6 +36,9 @@ func TestFullAppAndLite(t *testing.T) {
 	if w := get(h, "/", nil); w.Body.String() != "full app" {
 		t.Fatalf("/ should be the full app: %q", w.Body.String())
 	}
+	if w := get(h, "/", nil); w.Header().Get("Cross-Origin-Embedder-Policy") != "credentialless" {
+		t.Fatalf("the app is cross-origin isolated (threads): %v", w.Header())
+	}
 	if w := get(h, "/some/route", nil); w.Body.String() != "full app" {
 		t.Fatalf("app routes get index.html: %q", w.Body.String())
 	}
