@@ -53,6 +53,9 @@ func TestFullAppAndLite(t *testing.T) {
 	if w := get(handler(lite, app, "0.2.2"), "/main.dart.wasm", map[string]string{"If-None-Match": etag}); w.Code != 200 {
 		t.Fatalf("a new server version must send the file again, got %d", w.Code)
 	}
+	if w := get(handler(lite, app, "dev"), "/main.dart.wasm", map[string]string{"If-None-Match": `"dev:main.dart.wasm"`}); w.Code != 200 || w.Header().Get("ETag") != "" {
+		t.Fatalf("dev builds are never cached (each one is \"dev\"), got %d %v", w.Code, w.Header())
+	}
 	if w := get(h, "/lite/", nil); w.Body.String() != "lite panel" {
 		t.Fatalf("/lite/ is the light panel: %q", w.Body.String())
 	}

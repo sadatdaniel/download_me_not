@@ -89,12 +89,16 @@ func serveApp(w http.ResponseWriter, r *http.Request, appFS fs.FS, version strin
 			name = "index.html" // the app's own routes
 		}
 	}
-	etag := `"` + version + ":" + name + `"`
-	h.Set("ETag", etag)
-	h.Set("Cache-Control", "no-cache") // revalidate each time: a 304 until the server is updated
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
+	if version == "dev" { // every dev build is "dev": a 304 would keep the previous build's app
+		h.Set("Cache-Control", "no-store")
+	} else {
+		etag := `"` + version + ":" + name + `"`
+		h.Set("ETag", etag)
+		h.Set("Cache-Control", "no-cache") // revalidate each time: a 304 until the server is updated
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 	}
 	ct := map[string]string{".wasm": "application/wasm", ".mjs": "text/javascript", ".js": "text/javascript"}[path.Ext(name)]
 	if ct == "" {
