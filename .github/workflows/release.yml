@@ -15,7 +15,11 @@ jobs:
         env: { KEY: "${{ secrets.RELEASE_SIGNING_KEY }}" }
       - uses: goreleaser/goreleaser-action@v6
         with: { args: release --clean }
-        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          # built into the binary (empty until the secrets exist: then the owner sets the client up in the app)
+          GDRIVE_CLIENT_ID: "${{ secrets.GDRIVE_CLIENT_ID }}"
+          GDRIVE_CLIENT_SECRET: "${{ secrets.GDRIVE_CLIENT_SECRET }}"
   # The previous release updates itself to this one through the real GitHub release (signature
   # checked against the embedded key). Proves the self-update path end to end on every release.
   update-e2e:

@@ -59,6 +59,10 @@ import (
 
 var version = "dev" // set by -ldflags "-X main.version=..."
 
+// The app's Google client for Drive, built into release binaries from repo secrets (an installed-app client:
+// Google does not treat its "secret" as secret). Empty in other builds; a client set in Settings wins.
+var gdriveClientID, gdriveClientSecret string
+
 // updateRepo is where signed releases are published.
 var updateRepo = "sadatdaniel/getaload"
 
@@ -160,6 +164,10 @@ func serveCmd() *cobra.Command {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		reg := provider.NewRegistry(pcfg, cfg.Paths.Data)
+		if id, _ := reg.Setting("gdrive", "clientId").(string); id == "" && gdriveClientID != "" {
+			reg.SetSetting("gdrive", "clientId", gdriveClientID) // in memory only: never written to the config
+			reg.SetSetting("gdrive", "clientSecret", gdriveClientSecret)
+		}
 		inst := &tools.Installer{Client: netguard.Client(), DataDir: cfg.Paths.Data}
 		// Missing helper tools are installed the moment a feature needs them (unless tool management is off).
 		od := &tools.OnDemand{Dir: cfg.Paths.Data}

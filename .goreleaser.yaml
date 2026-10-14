@@ -14,7 +14,8 @@ builds:
     goarch: [amd64, arm64, arm]
     goarm: ["7"]
     flags: [-trimpath]
-    ldflags: ["-s -w -X main.version={{.Version}}"]
+    # The Google client (repo secrets GDRIVE_CLIENT_ID/SECRET) is built in, so Drive works without set-up.
+    ldflags: ["-s -w -X main.version={{.Version}} -X main.gdriveClientID={{ index .Env \"GDRIVE_CLIENT_ID\" }} -X main.gdriveClientSecret={{ index .Env \"GDRIVE_CLIENT_SECRET\" }}"]
 archives:
   - formats: [tar.gz]
     # install.sh looks for getaload_<version>_linux_<arch>; go-selfupdate matches the _linux_<arch> suffix.
