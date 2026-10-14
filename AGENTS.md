@@ -52,7 +52,8 @@ internal/engine    torrent Engine interface + anacrolix implementation (spike le
 internal/httpdl    IDM-style downloader: speed-aware work stealing, slow-connection watchdog, resume, If-Range
 internal/jobs      crash-only job manager: DB holds desired state, reconcile loop runs runners (recover per job)
 internal/selftest  offline end-to-end checks behind `getaload doctor --selftest`
-internal/webui     browser control panel (Preact + htm vendored, no build step), served at /, strict CSP
+internal/webui     browser clients: the full Flutter web app at / (embedded by the release from getaload_app at
+                   internal/webui/APP_VERSION via scripts/webapp.sh; never committed) and the light Preact panel at /lite/
 internal/video, cookies, gdrive, rclone, acme, tlsutil, secret, extract, limits, update: one concern each
 scripts/           install.sh (signed-release installer) and test-install.sh (runs in CI)
 test/acme/         isolated Pebble ACME issuance test (sh test/acme/run.sh)

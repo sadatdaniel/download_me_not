@@ -35,3 +35,7 @@ release-key.pem
 
 # install simulation output (contains a throwaway token)
 test/sim/install.log
+
+# the Flutter web build, put in by the release (scripts/webapp.sh); only the README is committed
+internal/webui/app/*
+!internal/webui/app/README.md

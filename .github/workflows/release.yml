@@ -8,6 +8,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      # The full web client: the getaload_app Flutter web build at the version in internal/webui/APP_VERSION,
+      # embedded into the binary (scripts/webapp.sh). Same step in the image job.
+      - id: appver
+        run: echo "ref=$(cat internal/webui/APP_VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with: { repository: sadatdaniel/getaload_app, ref: "${{ steps.appver.outputs.ref }}", path: app-src }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: "3.47.5", channel: stable, cache: true }
+      - name: web client
+        run: |
+          cd app-src && flutter pub get
+          flutter build web --release --wasm --no-web-resources-cdn --dart-define=APP_VERSION="${{ steps.appver.outputs.ref }}"
+          cd .. && sh scripts/webapp.sh app-src/build/web internal/webui/app && rm -rf app-src
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
       - name: release signing key
@@ -57,6 +70,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The full web client: the getaload_app Flutter web build at the version in internal/webui/APP_VERSION,
+      # embedded into the binary (scripts/webapp.sh). Same step in the image job.
+      - id: appver
+        run: echo "ref=$(cat internal/webui/APP_VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with: { repository: sadatdaniel/getaload_app, ref: "${{ steps.appver.outputs.ref }}", path: app-src }
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: "3.47.5", channel: stable, cache: true }
+      - name: web client
+        run: |
+          cd app-src && flutter pub get
+          flutter build web --release --wasm --no-web-resources-cdn --dart-define=APP_VERSION="${{ steps.appver.outputs.ref }}"
+          cd .. && sh scripts/webapp.sh app-src/build/web internal/webui/app && rm -rf app-src
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
