@@ -78,15 +78,45 @@ func main() {
 	pf := root.PersistentFlags()
 	pf.StringVar(&cfgPath, "config", config.DefaultPath(), "config file (env GETALOAD_CONFIG)")
 	pf.BoolVar(&jsonOut, "json", false, "JSON output for scripting")
-	pf.StringVar(&srvURL, "url", envOr("GETALOAD_URL", "http://127.0.0.1:8080"), "server URL (env GETALOAD_URL)")
+	pf.StringVar(&srvURL, "url", os.Getenv("GETALOAD_URL"), "server URL (env GETALOAD_URL; default: this server, from its config)")
 	pf.StringVar(&srvToken, "token", os.Getenv("GETALOAD_TOKEN"), "API token (env GETALOAD_TOKEN)")
 	pf.StringVar(&srvFP, "fingerprint", os.Getenv("GETALOAD_FINGERPRINT"), "pin a self-signed server certificate by SHA-256 (env GETALOAD_FINGERPRINT; shown by `getaload connect`)")
+	root.PersistentPreRun = func(*cobra.Command, []string) { localServer() }
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
 		jobAction("pause"), jobAction("resume"), jobAction("recheck"), limitsCmd(), peersCmd(), piecesCmd(), trackersCmd(), priorityCmd(), filesCmd(), learnedCmd(), formatsCmd(), cookiesCmd(), copyCmd(), toolsCmd(), updateCmd(), uninstallCmd(), healthCmd(), userCmd(), adminCmd(), loginCmd(), connectCmd())
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
+	}
+}
+
+// localServer points the CLI at the server on this machine when no --url is given: its port and scheme from
+// the config, and (self-signed) its certificate fingerprint, so `sudo getaload ...` on the server just works.
+func localServer() {
+	if srvURL != "" {
+		return
+	}
+	srvURL = "http://127.0.0.1:5623"
+	_, cfg, err := config.Load(cfgPath, nil)
+	if err != nil {
+		return
+	}
+	_, port, err := net.SplitHostPort(cfg.Server.Listen)
+	if err != nil {
+		return
+	}
+	switch tlsMode(cfg) {
+	case "off":
+		srvURL = "http://127.0.0.1:" + port
+	case "self-signed":
+		srvURL = "https://127.0.0.1:" + port
+		dir := filepath.Join(cfg.Paths.Data, "tls") // read only: the server makes the certificate, never the CLI
+		if cert, err := tls.LoadX509KeyPair(filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")); err == nil && srvFP == "" {
+			srvFP, _ = tlsutil.Fingerprint(cert)
+		}
+	default: // acme: the certificate names the domain
+		srvURL = "https://" + cfg.Server.Domain
 	}
 }
 

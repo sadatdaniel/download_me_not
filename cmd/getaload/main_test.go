@@ -1,8 +1,10 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/sadatdaniel/getaload/internal/config"
 	"github.com/sadatdaniel/getaload/internal/engine"
 )
 
@@ -46,5 +48,22 @@ func TestParseSeed(t *testing.T) {
 func TestLanAddr(t *testing.T) {
 	if got := lanAddr("10.0.0.2:8080"); got != "10.0.0.2:8080" {
 		t.Fatalf("specific host changed: %s", got)
+	}
+}
+
+// Without --url the CLI talks to the server on this machine, on the port in its config.
+func TestLocalServer(t *testing.T) {
+	cfgPath = filepath.Join(t.TempDir(), "config.yaml")
+	config.Set(cfgPath, "server.listen", "0.0.0.0:7000")
+	config.Set(cfgPath, "server.tls", "off")
+	srvURL = ""
+	localServer()
+	if srvURL != "http://127.0.0.1:7000" {
+		t.Fatalf("got %q", srvURL)
+	}
+	srvURL = "https://elsewhere.test"
+	localServer()
+	if srvURL != "https://elsewhere.test" {
+		t.Fatalf("--url must win: %q", srvURL)
 	}
 }

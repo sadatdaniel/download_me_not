@@ -25,16 +25,16 @@ The installer asks for **your name and a 4-digit PIN**: you become the first use
 end it prints how to connect: the address, the certificate fingerprint and the ports to open.
 `sudo getaload connect` shows that again at any time.
 
-**2. Open the ports**: TCP **8080** (app and web panel) and TCP+UDP **42069** (torrents, optional but
+**2. Open the ports**: TCP **5623** (app and web panel) and TCP+UDP **42069** (torrents, optional but
 faster), in the server's firewall *and*, on a cloud VM, in the provider's console. On **Oracle Cloud**:
 
 - Console: Networking, Virtual cloud networks, your VCN, Subnets, your subnet, the Default Security
-  List, **Add Ingress Rules**: source `0.0.0.0/0`, protocol TCP, destination port `8080`; add two more
+  List, **Add Ingress Rules**: source `0.0.0.0/0`, protocol TCP, destination port `5623`; add two more
   rules for TCP `42069` and UDP `42069`.
 - On the VM (Oracle's Ubuntu image blocks ports itself):
-  `sudo iptables -I INPUT -p tcp --dport 8080 -j ACCEPT && sudo iptables -I INPUT -p tcp --dport 42069 -j ACCEPT && sudo iptables -I INPUT -p udp --dport 42069 -j ACCEPT && sudo netfilter-persistent save`
+  `sudo iptables -I INPUT -p tcp --dport 5623 -j ACCEPT && sudo iptables -I INPUT -p tcp --dport 42069 -j ACCEPT && sudo iptables -I INPUT -p udp --dport 42069 -j ACCEPT && sudo netfilter-persistent save`
 
-**3. Connect**: in the app (or a browser), enter `https://<server's public IP>:8080`, accept the
+**3. Connect**: in the app (or a browser), enter `https://<server's public IP>:5623`, accept the
 certificate after comparing its fingerprint, tap your name and enter your PIN. The device stays
 signed in. Use the public IP: a `10.x` or `192.168.x` address only works on the same network.
 

@@ -10,7 +10,8 @@ PREFIX=/opt/getaload
 CONF_DIR=/etc/getaload
 DATA_DIR=${GETALOAD_DATA_DIR:-/var/lib/getaload}
 DL_DIR=${GETALOAD_DOWNLOADS_DIR:-/srv/getaload/downloads}
-PORT=${GETALOAD_PORT:-8080}
+PORT=${GETALOAD_PORT:-5623} # "LOAD" on a phone keypad; 8080 is taken by qBittorrent, SABnzbd and many others
+PORT_SET=${GETALOAD_PORT:+1} # chosen by the person: never moved to another port
 DOMAIN=${GETALOAD_DOMAIN:-}
 ACCESS=${GETALOAD_ACCESS:-lan} # lan (self-signed), domain (acme), proxy (plain HTTP on localhost)
 VERSION=${GETALOAD_VERSION:-latest}
@@ -51,7 +52,7 @@ while [ $# -gt 0 ]; do
 	case $1 in
 	--data-dir) DATA_DIR=$2; shift ;;
 	--downloads-dir) DL_DIR=$2; shift ;;
-	--port) PORT=$2; shift ;;
+	--port) PORT=$2 PORT_SET=1; shift ;;
 	--access) ACCESS=$2; shift ;;
 	--domain) DOMAIN=$2; shift ;;
 	--version) VERSION=$2; shift ;;
@@ -76,6 +77,11 @@ die() {
 	exit 1
 }
 has_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; }
+# port_user prints what listens on TCP port $1 ("" = free). Without ss there is no check (busybox images).
+port_user() {
+	command -v ss >/dev/null 2>&1 || return 0
+	ss -ltnpH "sport = :$1" 2>/dev/null | head -1 | sed -n 's/.*users:(("\([^"]*\)".*/\1/p;t;s/.*/another program/p'
+}
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"
 
@@ -223,6 +229,17 @@ FRESH=0
 [ -f "$CONF_DIR/config.yaml" ] || FRESH=1
 if [ "$FRESH" -eq 1 ]; then
 	say "writing $CONF_DIR/config.yaml"
+	# A port another program already uses would keep the service from starting: say who has it, and move the
+	# default to the next free port (a port chosen with --port stays: stop instead).
+	used=$(port_user "$PORT")
+	if [ "$ACCESS" != domain ] && [ -n "$used" ]; then
+		[ -z "$PORT_SET" ] || die "port $PORT is used by $used; choose another with --port N"
+		free=$((PORT + 1))
+		while [ -n "$(port_user "$free")" ] && [ "$free" -lt $((PORT + 50)) ]; do free=$((free + 1)); done
+		[ -z "$(port_user "$free")" ] || die "port $PORT is used by $used and no free port follows it; choose one with --port N"
+		say "port $PORT is used by $used: using $free instead (or choose one with --port N)"
+		PORT=$free
+	fi
 	case $ACCESS in
 	lan) LISTEN=0.0.0.0:$PORT TLS=self-signed ;;
 	domain)

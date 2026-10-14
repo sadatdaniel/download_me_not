@@ -1,5 +1,6 @@
 # Start:   docker compose up -d       (the first start prints your API token: docker compose logs getaload)
-# Pair:    docker compose exec getaload getaload pair --url https://<server-ip>:8080
+# Users:   docker compose exec getaload getaload user add NAME   (then sign in at https://<server-ip>:5623)
+# Control: docker compose exec getaload getaload admin           (a one-time code for the app's Settings)
 # Update:  docker compose pull && docker compose up -d
 # Helper tools (yt-dlp, rclone, deno) also update themselves daily inside the data volume.
 services:
@@ -8,7 +9,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "8080:8080"          # HTTPS with a self-signed certificate (the app pins it via `getaload pair`)
+      - "5623:8080"          # HTTPS, self-signed (the app shows the fingerprint once); 8080 inside the container
       - "42069:42069"        # torrents
       - "42069:42069/udp"
     volumes:

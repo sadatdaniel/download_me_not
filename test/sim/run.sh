@@ -24,7 +24,7 @@ wait_for() {
 		sleep 3
 	done
 }
-OPEN_PORTS='iptables -I INPUT -p tcp --dport 8080 -j ACCEPT; iptables -I INPUT -p tcp --dport 42069 -j ACCEPT; iptables -I INPUT -p udp --dport 42069 -j ACCEPT; netfilter-persistent save'
+OPEN_PORTS='iptables -I INPUT -p tcp --dport 5623 -j ACCEPT; iptables -I INPUT -p tcp --dport 42069 -j ACCEPT; iptables -I INPUT -p udp --dport 42069 -j ACCEPT; netfilter-persistent save'
 
 run_pass() {
 	ARCH=$1
@@ -33,7 +33,7 @@ run_pass() {
 
 	step "[$ARCH] boot the VM (Ubuntu 24.04 with systemd)"
 	docker run -d --name dmn-sim --hostname oracle-vm --platform "linux/$ARCH" --privileged --cgroupns=host \
-		-v /sys/fs/cgroup:/sys/fs/cgroup:rw -p "127.0.0.1:$PORT:8080" "dmn-sim:$ARCH" >/dev/null
+		-v /sys/fs/cgroup:/sys/fs/cgroup:rw -p "127.0.0.1:$PORT:5623" "dmn-sim:$ARCH" >/dev/null
 	wait_for 'vm systemctl is-system-running 2>/dev/null | grep -qE "running|degraded"' 60 || fail "systemd did not boot"
 	vm rm -f /.dockerenv # a real VM has no Docker marker (old releases refuse self-update when they see it)
 	FW=0
@@ -73,8 +73,8 @@ run_pass() {
 	vm sh -c 'cd /tmp && runuser -u getaload -- env GETALOAD_CONFIG=/etc/getaload/config.yaml HOME=/var/lib/getaload getaload doctor --selftest' | sed 's/^/   /'
 
 	step "self-update to the latest release (signed), restart by systemd, confirm after boot"
-	FP=$(vm sh -c 'echo | openssl s_client -connect 127.0.0.1:8080 2>/dev/null | openssl x509 -outform der | sha256sum | cut -d" " -f1')
-	as_ubuntu "getaload --url https://127.0.0.1:8080 --fingerprint $FP --token $TOKEN update apply" | sed 's/^/   /' || fail "update apply"
+	FP=$(vm sh -c 'echo | openssl s_client -connect 127.0.0.1:5623 2>/dev/null | openssl x509 -outform der | sha256sum | cut -d" " -f1')
+	as_ubuntu "getaload --url https://127.0.0.1:5623 --fingerprint $FP --token $TOKEN update apply" | sed 's/^/   /' || fail "update apply"
 	LATEST=$(curl -fsSL https://api.github.com/repos/sadatdaniel/getaload/releases/latest | grep -o '"tag_name": *"v[^"]*"' | grep -o '[0-9][^"]*')
 	wait_for "vm getaload version | grep -qx $LATEST && vm systemctl is-active --quiet getaload" 60 || fail "not running $LATEST after the update"
 	wait_for "! vm test -e /var/lib/getaload/update-pending.json" 60 || fail "new version never confirmed itself healthy"

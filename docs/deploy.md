@@ -33,10 +33,10 @@ Options (or the matching `GETALOAD_*` environment variables):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--access lan` | lan | HTTPS with a self-signed certificate on port 8080 (pinned by fingerprint) |
+| `--access lan` | lan | HTTPS with a self-signed certificate on port 5623 (pinned by fingerprint) |
 | `--access domain --domain dl.example.com` | | Automatic Let's Encrypt certificate on port 443 |
-| `--access proxy` | | Plain HTTP on 127.0.0.1:8080 for a reverse proxy, Cloudflare Tunnel or Tailscale |
-| `--port N` | 8080 | Port for `lan` and `proxy` |
+| `--access proxy` | | Plain HTTP on 127.0.0.1:5623 for a reverse proxy, Cloudflare Tunnel or Tailscale |
+| `--port N` | 5623 | Port for `lan` and `proxy`. 5623 is "LOAD" on a phone keypad; if another program already uses it, the installer says which one and takes the next free port (a port you chose with `--port` stops the install instead). Servers installed before v0.2.2 keep their port (usually 8080) |
 | `--downloads-dir DIR` | /srv/getaload/downloads | Where downloads go |
 | `--data-dir DIR` | /var/lib/getaload | Database, tools, certificates |
 | `--version vX.Y.Z` | latest | A specific release |
@@ -79,7 +79,7 @@ To use a host folder for downloads, replace the `downloads` volume with e.g.
 
 ## 3. First use and users
 
-1. **Connect**: in the Android app (Add server) or a browser, open `https://<server>:8080/`. Use the server's
+1. **Connect**: in the Android app (Add server) or a browser, open `https://<server>:5623/`. Use the server's
    **public** IP or domain; a `10.x` / `192.168.x` address only works on the same network. With the
    self-signed certificate the app and the browser show its fingerprint once: it must match the one the
    installer or `sudo getaload connect` printed.
@@ -101,7 +101,7 @@ To use a host folder for downloads, replace the `downloads` volume with e.g.
 
 **CLI**: on the server, run `getaload` with `sudo` (it uses `/etc/getaload/config.yaml` and keeps files owned by the
 service user). To use the CLI as a user (here or from another computer), sign it in once:
-`getaload --url https://<server>:8080 --fingerprint <sha256> login NAME` prints a token for `GETALOAD_TOKEN`.
+`getaload --url https://<server>:5623 --fingerprint <sha256> login NAME` prints a token for `GETALOAD_TOKEN`.
 
 **Tokens without a user** (`sudo getaload setup --name <name> --scope read|write|admin`) are for
 scripts and server-wide settings: once users exist they no longer reach anyone's downloads or files.
@@ -110,7 +110,7 @@ scripts and server-wide settings: once users exist they no longer reach anyone's
 
 | Port | Protocol | For |
 |---|---|---|
-| 8080 (or `--port`) | TCP | Web panel and API (`lan`) |
+| 5623 (or `--port`) | TCP | Web panel and API (`lan`) |
 | 443, 80 | TCP | Web panel and API, certificate challenges (`domain`) |
 | 42069 | TCP and UDP | Torrent peers (optional but much faster when open) |
 
@@ -119,22 +119,22 @@ scripts and server-wide settings: once users exist they no longer reach anyone's
 1. **Console**: menu, Networking, **Virtual cloud networks**, pick the compartment and your VCN, tab
    **Subnets**, your subnet (the instance page shows it under *Primary VNIC*), **Default Security List**,
    **Security rules** (or *Ingress Rules*), **Add Ingress Rules**:
-   - Stateless off, Source Type CIDR, Source CIDR `0.0.0.0/0`, IP Protocol **TCP**, Destination Port `8080`
+   - Stateless off, Source Type CIDR, Source CIDR `0.0.0.0/0`, IP Protocol **TCP**, Destination Port `5623`
    - **+ Another Ingress Rule**: TCP, Destination Port `42069`
    - **+ Another Ingress Rule**: UDP, Destination Port `42069`
    (A network security group on the instance's VNIC works too; rules from both apply.)
 2. **On the VM** (rules go above Oracle's REJECT rule and survive reboots):
-   `sudo iptables -I INPUT -p tcp --dport 8080 -j ACCEPT && sudo iptables -I INPUT -p tcp --dport 42069 -j ACCEPT && sudo iptables -I INPUT -p udp --dport 42069 -j ACCEPT && sudo netfilter-persistent save`
+   `sudo iptables -I INPUT -p tcp --dport 5623 -j ACCEPT && sudo iptables -I INPUT -p tcp --dport 42069 -j ACCEPT && sudo iptables -I INPUT -p udp --dport 42069 -j ACCEPT && sudo netfilter-persistent save`
    Check: `sudo iptables -L INPUT -n --line-numbers | head -8` (the ACCEPT lines come before REJECT).
-3. **Test** from the phone's browser: `https://<public IP>:8080/v1/health` shows `{"status":"ok",...}`
+3. **Test** from the phone's browser: `https://<public IP>:5623/v1/health` shows `{"status":"ok",...}`
    after the certificate warning. If it times out, one of the two steps is missing; also try with the
-   phone's VPN off. `sudo ss -ltnp | grep 8080` must show `0.0.0.0:8080`.
+   phone's VPN off. `sudo ss -ltnp | grep 5623` must show `0.0.0.0:5623`.
 
-Port 8080 is open to the whole internet so the phone works on mobile data; every request still needs a
+Port 5623 is open to the whole internet so the phone works on mobile data; every request still needs a
 device token, PINs lock after five wrong tries, and the app pins the certificate.
 
-Examples: `sudo ufw allow 8080/tcp && sudo ufw allow 42069` or
-`sudo firewall-cmd --permanent --add-port=8080/tcp --add-port=42069/tcp --add-port=42069/udp && sudo firewall-cmd --reload`.
+Examples: `sudo ufw allow 5623/tcp && sudo ufw allow 42069` or
+`sudo firewall-cmd --permanent --add-port=5623/tcp --add-port=42069/tcp --add-port=42069/udp && sudo firewall-cmd --reload`.
 
 Check everything with `getaload doctor` (helper tools) and `getaload doctor --selftest` (download, stream and
 torrent, all on the machine itself, no internet).

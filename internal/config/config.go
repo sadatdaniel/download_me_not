@@ -113,7 +113,7 @@ func DefaultPath() string {
 func defaults() map[string]any {
 	home, _ := os.UserHomeDir()
 	return map[string]any{
-		"server.listen":     "127.0.0.1:8080",
+		"server.listen":     "127.0.0.1:5623",
 		"server.tls":        "auto",
 		"server.httplisten": ":80",
 		"updates.tools":     "auto",
