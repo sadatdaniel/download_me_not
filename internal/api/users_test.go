@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sadatdaniel/getaload/internal/config"
+	"github.com/sadatdaniel/getaload/internal/store"
 )
 
 func login(t *testing.T, srv *httptest.Server, name, pin, device string) (string, string) {
@@ -72,11 +73,11 @@ func TestUsersAreSeparate(t *testing.T) {
 	defer close(release) // before Close, which waits for the slow handler
 	defer cancel()
 
-	// The first user comes from an admin token and becomes the owner.
+	// Users come from an admin token (the command line or an admin key); they are all plain users.
 	if code, b := call(t, srv, "POST", "/v1/users", "write-tok", `{"name":"Alice","pin":"1111"}`); code != 403 {
 		t.Fatalf("write token added a user: %d %s", code, b)
 	}
-	if code, b := call(t, srv, "POST", "/v1/users", "admin-tok", `{"name":"Alice","pin":"1111"}`); code != 201 || !strings.Contains(b, `"owner":true`) {
+	if code, b := call(t, srv, "POST", "/v1/users", "admin-tok", `{"name":"Alice","pin":"1111"}`); code != 201 || strings.Contains(b, "owner") {
 		t.Fatalf("first user: %d %s", code, b)
 	}
 	// From now on a token without a user reaches nobody's data, only server-wide admin routes.
@@ -92,9 +93,6 @@ func TestUsersAreSeparate(t *testing.T) {
 		// doctor is a read route: also refused
 		t.Fatalf("doctor: %d", code)
 	}
-	if code, b := call(t, srv, "POST", "/v1/users", "admin-tok", `{"name":"Bob","pin":"2222"}`); code != 403 {
-		t.Fatalf("admin token added a second user without being the owner: %d %s", code, b)
-	}
 	if code, b := call(t, srv, "GET", "/v1/users", "", ""); code != 200 || !strings.Contains(b, "Alice") || strings.Contains(b, "pin") {
 		t.Fatalf("user names: %d %s", code, b)
 	}
@@ -106,8 +104,11 @@ func TestUsersAreSeparate(t *testing.T) {
 		t.Fatalf("login errors differ: %s / %s", wrongPIN, wrongName)
 	}
 	a, aliceID := login(t, srv, "alice", "1111", "laptop")
-	if code, b := call(t, srv, "POST", "/v1/users", a, `{"name":"Bob","pin":"2222"}`); code != 201 {
-		t.Fatalf("owner adds Bob: %d %s", code, b)
+	if code, b := call(t, srv, "POST", "/v1/users", a, `{"name":"Bob","pin":"2222"}`); code != 403 {
+		t.Fatalf("a signed-in user (even the first) added a user: %d %s", code, b)
+	}
+	if code, b := call(t, srv, "POST", "/v1/users", "admin-tok", `{"name":"Bob","pin":"2222"}`); code != 201 {
+		t.Fatalf("admin token adds Bob: %d %s", code, b)
 	}
 	b, bobID := login(t, srv, "Bob", "2222", "phone")
 	if code, _ := call(t, srv, "POST", "/v1/users", b, `{"name":"Eve","pin":"3333"}`); code != 403 {
@@ -212,15 +213,18 @@ func TestUsersAreSeparate(t *testing.T) {
 		t.Fatalf("Bob sees Alice's prefs: %s", body)
 	}
 
-	// PINs: your own needs the current one; only the owner resets others.
+	// PINs: your own needs the current one; others' only with an admin key.
 	if code, _ := call(t, srv, "PUT", "/v1/users/"+bobID+"/pin", b, `{"pin":"5555","current":"9999"}`); code != 403 {
 		t.Fatalf("Bob changed his PIN without the current one: %d", code)
 	}
 	if code, _ := call(t, srv, "PUT", "/v1/users/"+aliceID+"/pin", b, `{"pin":"5555"}`); code != 403 {
 		t.Fatalf("Bob changed Alice's PIN: %d", code)
 	}
-	if code, _ := call(t, srv, "PUT", "/v1/users/"+bobID+"/pin", a, `{"pin":"5555"}`); code != 204 {
-		t.Fatalf("owner resets Bob's PIN: %d", code)
+	if code, _ := call(t, srv, "PUT", "/v1/users/"+bobID+"/pin", a, `{"pin":"5555"}`); code != 403 {
+		t.Fatalf("Alice reset Bob's PIN: %d", code)
+	}
+	if code, _ := call(t, srv, "PUT", "/v1/admin/users/"+bobID+"/pin", "admin-tok", `{"pin":"5555"}`); code != 204 {
+		t.Fatalf("admin resets Bob's PIN: %d", code)
 	}
 
 	// Devices: list, sign one out.
@@ -237,10 +241,10 @@ func TestUsersAreSeparate(t *testing.T) {
 
 	// Removing Bob signs his devices out and (with deleteFiles) removes his folder.
 	call(t, srv, "POST", "/v1/fs/mkdir", b, `{"path":"/x"}`)
-	if code, _ := call(t, srv, "DELETE", "/v1/users/"+aliceID, a, ""); code != 400 {
-		t.Fatalf("owner removed themselves: %d", code)
+	if code, _ := call(t, srv, "DELETE", "/v1/users/"+bobID, a, ""); code != 403 {
+		t.Fatalf("Alice removed Bob: %d", code)
 	}
-	if code, _ := call(t, srv, "DELETE", "/v1/users/"+bobID+"?deleteFiles=true", a, ""); code != 204 {
+	if code, _ := call(t, srv, "DELETE", "/v1/users/"+bobID+"?deleteFiles=true", "admin-tok", ""); code != 204 {
 		t.Fatalf("remove Bob: %d", code)
 	}
 	if code, _ := call(t, srv, "GET", "/v1/jobs", b, ""); code != 401 {
@@ -268,5 +272,57 @@ func TestTokensSurviveConcurrentSignIns(t *testing.T) {
 	_, c, err := config.Load(cfg, nil)
 	if err != nil || len(c.Auth.Tokens) != 20 {
 		t.Fatalf("want 20 tokens, got %d (%v)", len(c.Auth.Tokens), err)
+	}
+}
+
+// Server control: a one-time code from `getaload admin` gives a device an admin key, which manages users but
+// reaches nobody's files; the code works once; the key can be taken away again.
+func TestAdminKey(t *testing.T) {
+	srv, cfgPath := newTestServer(t)
+	call(t, srv, "POST", "/v1/users", "admin-tok", `{"name":"Alice","pin":"1111"}`)
+	db, err := store.Open(filepath.Join(filepath.Dir(cfgPath), "getaload.db")) // what the CLI does, beside the server
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	code, _ := store.NewAdminCode(db, time.Minute)
+	_, out := call(t, srv, "POST", "/v1/admin/claim", "", `{"code":"`+code+`","device":"phone"}`)
+	var claimed struct{ Token string }
+	json.Unmarshal([]byte(out), &claimed)
+	k := claimed.Token
+	if k == "" {
+		t.Fatalf("claim: %s", out)
+	}
+	if c, _ := call(t, srv, "POST", "/v1/admin/claim", "", `{"code":"`+code+`","device":"other"}`); c != 403 {
+		t.Fatalf("a code works once: %d", c)
+	}
+	if c, b := call(t, srv, "POST", "/v1/users", k, `{"name":"Bob","pin":"2222"}`); c != 201 {
+		t.Fatalf("admin key adds a user: %d %s", c, b)
+	}
+	if c, _ := call(t, srv, "GET", "/v1/fs?path=/", k, ""); c != 403 {
+		t.Fatalf("an admin key must not reach anyone's files: %d", c)
+	}
+	if _, b := call(t, srv, "GET", "/v1/admin/devices", k, ""); !strings.Contains(b, `"phone","current":true`) {
+		t.Fatalf("admin devices: %s", b)
+	}
+	if c, _ := call(t, srv, "DELETE", "/v1/admin/devices/phone", k, ""); c != 204 {
+		t.Fatalf("remove the key: %d", c)
+	}
+	if c, _ := call(t, srv, "GET", "/v1/admin/devices", k, ""); c != 401 {
+		t.Fatalf("a removed key still works: %d", c)
+	}
+}
+
+// Servers from before admin keys gave the owner's sign-ins admin rights; on start those become plain sign-ins.
+func TestOldOwnerSignInsBecomePlain(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "config.yaml")
+	config.Set(cfg, "auth.tokens", []map[string]any{{"name": "u:abc:phone", "hash": "h1", "scope": "admin"},
+		{"name": "owner", "hash": "h2", "scope": "admin"}})
+	if err := DowngradeSignIns(cfg); err != nil {
+		t.Fatal(err)
+	}
+	_, c, _ := config.Load(cfg, nil)
+	if len(c.Auth.Tokens) != 2 || c.Auth.Tokens[0].Scope != "write" || c.Auth.Tokens[1].Scope != "admin" {
+		t.Fatalf("want the sign-in downgraded and the command-line token kept: %+v", c.Auth.Tokens)
 	}
 }

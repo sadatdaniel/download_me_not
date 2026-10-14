@@ -6,11 +6,11 @@
 
 **Released in v0.2.1 (2026-10-14, fourth conversation):** the full Flutter web client served by the server at `/` (light panel at `/lite/`; cross-origin isolated so it renders with threads; dev builds never cached), web fixes (double-click opens a folder once, no Future.then error after a 401, the downloads list stops polling after a 401, phone-only player settings hidden on the web), security audit fixes (CSP sandbox on every file route and `dl=1` downloads; locked config writes; PIN lock overflow and parallel guesses; speed limits owner-only; one connection pool in the yt-dlp guard proxy), QR pairing removed (connect by address + name + PIN; three dependencies and the camera permission gone), Paste link button instead of watching the clipboard, build tools pinned (actions by SHA, GoReleaser v2.18.3, base images by digest; Dependabot in both repos). README drafts in `docs/drafts/` (uncommitted, owner reviewing).
 
-**On main, not released yet:** nothing.
+**On main, not released yet:** **admin key** (scope §17 "Users and server control"): everyone is a plain user; `sudo getaload admin` prints a one-time code (`admin list`, `admin remove NAME`), the app's Settings, Server control trades it for an admin key, which adds and removes people, resets PINs and does updates, add-ons and Drive set-up; old owner sign-ins become plain on start; the installer prints a code on fresh installs; docs/deploy.md updated. Tested: Go tests (claim once, expiry, no files for an admin key, revoke, downgrade), app tests, and in the browser pane (code from the CLI in the preview container, typed in lower case without the dash, then adding a person). Needs app v0.2.2 + server v0.2.2 together (an old app shows no server settings for anyone on the new server; the owner gets control back with a code).
 
 **Next action, in order:**
 0. **Owner checks in real Chrome or Firefox** (the test pane drops clicks, the first typed text after focusing a field, and blocks clipboard reads): double-clicking a folder opens it once; the PIN keeps every digit when typed right after clicking the field; Paste link fills the field.
-1. **Build the admin key** (scope §17 "Users and server control", decided): plain users only; `getaload admin` prints a one-time code that the app (Settings) trades for an admin key; owner-only routes move to that key; existing owner sign-ins become plain users on upgrade. Everyone still connects their own Google Drive.
+1. **Release app v0.2.2 and server v0.2.2** (admin key; owner approves). The update gives existing owners plain sign-ins: after updating, run `sudo getaload admin` once and enter the code in the app.
 2. **Port:** one fixed default, changed only on the server (`--port`, `config set server.listen`); the installer checks the port is free and names what uses it. Propose a less crowded number than 8080 (the owner's server keeps its port).
 3. **Dependabot PRs:** review the open ones; GoReleaser action v7 and anacrolix/dht 2.24 fail CI.
 4. **Owner's README approval**, then put `docs/drafts/README.server.md` → `README.md` here and `docs/drafts/README.app.md` → getaload_app `README.md`. Owner feedback so far: product voice (like Seedr/TorBox), feature checklist with ✅, web client first among clients, free Oracle server (2 cores / 12 GB per account; the owner's is 1 core / 6 GB), Oracle ports step by step. Add a Caddy section to docs/deploy.md (`--access proxy`, Caddyfile `reverse_proxy 127.0.0.1:8080`).
@@ -20,7 +20,7 @@
 8. Later: delete the old GHCR package `download_me_not` (owner's call), the dead install-sim tokens in two old commits (allowlisted in .gitleaks.toml; history scrub is the owner's call), licence choice, screenshots from a demo server, F-Droid build (SELF_UPDATE=false), WireGuard for downloads (home connection for YouTube), subtitle search.
 
 **Open (known gaps):** Android-only paths tested only by the owner on one phone (download-to-phone, port test, self-update install flow), stream-window test skipped under -race (anacrolix interested/choked race, see internal/engine/stream_test.go), GHCR image visibility (owner sets it public), FTP (deferred), per-torrent speed limits, licence choice, Cinemeta's own search is weak upstream.
-**Blockers:** none. (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
+**Blockers:** none. (`docker compose -f compose.dev.yaml run` can hang on a "volume doesn't match, recreate?" prompt without a terminal; use `docker run` with the dmn-dev_dmn-gomod and dmn-dev_dmn-gocache volumes and image dmn-dev:latest instead, never recreate the volumes.) (2026-10-11: the host disk filled up once and Docker went read-only; the owner freed space and compacted docker_data.vhdx. Keep builds lean; run tests with `go test -p 2` if Docker Desktop struggles.)
 
 ## Checklist
 
@@ -127,3 +127,4 @@
 - 2026-10-14: Paste link button replaces the clipboard watcher (app). Proposed and waiting: installer port check and a less common default port than 8080; pinning CI actions, GoReleaser and base images, Dependabot for the app repo.
 - 2026-10-14: pinned CI actions (SHA), GoReleaser v2.18.3, base images (digest); Dependabot for docker here and pub + actions in the app repo.
 - 2026-10-14: released app v0.2.1 and server v0.2.1 (release, update-e2e and image jobs green).
+- 2026-10-14: admin key built (server + app), tested; release v0.2.2 waits for the owner.

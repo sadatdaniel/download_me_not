@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -170,5 +171,27 @@ func TestPINLockNeverExpiresEarly(t *testing.T) {
 	}
 	if _, err := CheckPIN(db, u.ID, "1234"); !errors.As(err, &l) {
 		t.Fatalf("the right PIN must wait for the lock too: %v", err)
+	}
+}
+
+func TestAdminCodeWorksOnce(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "a.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	code, err := NewAdminCode(db, time.Minute)
+	if err != nil || len(code) != 9 || code[4] != '-' {
+		t.Fatalf("code %q %v", code, err)
+	}
+	if err := UseAdminCode(db, " "+strings.ToLower(strings.ReplaceAll(code, "-", ""))); err != nil {
+		t.Fatalf("typed without the dash, in lower case: %v", err)
+	}
+	if err := UseAdminCode(db, code); !errors.Is(err, ErrBadCode) {
+		t.Fatalf("a code works only once: %v", err)
+	}
+	old, _ := NewAdminCode(db, -time.Second)
+	if err := UseAdminCode(db, old); !errors.Is(err, ErrBadCode) {
+		t.Fatalf("an expired code must fail: %v", err)
 	}
 }

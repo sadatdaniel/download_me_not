@@ -40,7 +40,7 @@ usage() {
 	echo "  --from DIR           use release files from DIR instead of downloading"
 	echo "  --no-start           install but do not start the service"
 	echo "  --no-ffmpeg          do not install ffmpeg with the system package manager"
-	echo "  --user NAME          first user (the owner); asked on a fresh install unless --yes"
+	echo "  --user NAME          first user; asked on a fresh install unless --yes"
 	echo "  --pin NNNN           that user's 4-digit PIN (or env GETALOAD_PIN); asked when missing"
 	echo "  --yes                no questions (without --user: add users later with: getaload user add NAME)"
 	echo "  --uninstall          remove service and binary (keeps config and data)"
@@ -237,17 +237,17 @@ if [ "$FRESH" -eq 1 ]; then
 	[ -z "$DOMAIN" ] || as_svc /usr/local/bin/getaload config set server.domain "$DOMAIN"
 	as_svc /usr/local/bin/getaload config set paths.data "$DATA_DIR"
 	as_svc /usr/local/bin/getaload config set paths.downloads "$DL_DIR"
-	say "creating the owner token (shown once)"
+	say "creating the command-line token (shown once)"
 	as_svc /usr/local/bin/getaload setup
 else
 	say "existing config kept (upgrade or repair)"
 fi
 
-# The first user (the owner). Questions go to /dev/tty: with `curl | sudo sh`, stdin is the script.
+# The first user. Questions go to /dev/tty: with `curl | sudo sh`, stdin is the script.
 # A subshell: in POSIX sh a failed redirection on a special builtin would end the whole script.
 has_tty() { [ "$YES" -eq 0 ] && (: </dev/tty) 2>/dev/null; }
 if [ "$FRESH" -eq 1 ] && [ -z "$FIRST_USER" ] && has_tty; then
-	printf 'Your name (the first user, who can add the others): ' >/dev/tty
+	printf 'Your name (the first user): ' >/dev/tty
 	read -r FIRST_USER </dev/tty
 fi
 if [ -n "$FIRST_USER" ]; then
@@ -261,8 +261,10 @@ if [ -n "$FIRST_USER" ]; then
 		echo >/dev/tty
 	done
 	as_svc env GETALOAD_PIN="$FIRST_PIN" /usr/local/bin/getaload user add "$FIRST_USER" || say "warning: could not add $FIRST_USER (see above); add users later with: sudo getaload user add NAME"
+	# Server control (adding people, updates, add-ons) needs an admin key: this code gives one device that key.
+	[ "$FRESH" -eq 1 ] && as_svc /usr/local/bin/getaload admin || true
 elif [ "$FRESH" -eq 1 ]; then
-	say "no user yet: add the first one (the owner) with: sudo getaload user add NAME"
+	say "no user yet: add the first one with: sudo getaload user add NAME"
 fi
 
 if has_systemd; then

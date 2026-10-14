@@ -36,8 +36,9 @@ grep -q "tls: self-signed" /etc/getaload/config.yaml || fail "tls mode"
 [ "$(stat -c %a /etc/getaload)" = 700 ] || fail "config dir not private"
 grep -q "How to connect" out.txt || fail "no connection steps printed"
 grep -q "installing getaload" out.txt || fail "no version line on a fresh install"
-grep -q "Token" out.txt || fail "no owner token printed"
-grep -q "added Alice (owner)" out.txt || fail "first user not added"
+grep -q "Token" out.txt || fail "no command-line token printed"
+grep -q "added Alice" out.txt || fail "first user not added"
+grep -q "Admin code:" out.txt || fail "no admin code printed"
 ok "fresh install"
 
 # Re-run: upgrade/repair keeps the config (and its tokens).

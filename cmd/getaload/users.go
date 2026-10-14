@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -45,7 +46,7 @@ func withDB(f func(db *sql.DB) error) error {
 }
 
 // userCmd manages household users on the server itself (like setup and pair): it works while the server is
-// stopped, so the installer can create the first user, and an owner who forgot the PIN can reset it over SSH.
+// stopped, so the installer can create the first user, and anyone who forgot their PIN gets a new one over SSH.
 // From other machines, the app does this through the API.
 func userCmd() *cobra.Command {
 	c := &cobra.Command{Use: "user", Short: "Household users (name + 4-digit PIN); run on the server"}
@@ -54,7 +55,7 @@ func userCmd() *cobra.Command {
 		return cmd.Flags().String("pin", "", "4-digit PIN (default: env GETALOAD_PIN, else asked)")
 	}
 
-	add := &cobra.Command{Use: "add <name>", Short: "Add a user (the first one becomes the owner)", Args: cobra.ExactArgs(1)}
+	add := &cobra.Command{Use: "add <name>", Short: "Add a user", Args: cobra.ExactArgs(1)}
 	addPIN := pinFlag(add)
 	add.RunE = func(_ *cobra.Command, a []string) error {
 		pin := askPIN(*addPIN)
@@ -63,13 +64,7 @@ func userCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return show(u, func() {
-				role := ""
-				if u.Owner {
-					role = " (owner)"
-				}
-				fmt.Printf("added %s%s; sign in with this name and PIN in the app\n", u.Name, role)
-			})
+			return show(u, func() { fmt.Printf("added %s; sign in with this name and PIN in the app\n", u.Name) })
 		})
 	}
 
@@ -80,9 +75,9 @@ func userCmd() *cobra.Command {
 				return err
 			}
 			return show(us, func() {
-				rows := [][]string{{"ID", "NAME", "OWNER", "LOCKED"}}
+				rows := [][]string{{"ID", "NAME", "LOCKED"}}
 				for _, u := range us {
-					rows = append(rows, []string{u.ID, u.Name, fmt.Sprint(u.Owner), fmt.Sprint(u.Locked > 0)})
+					rows = append(rows, []string{u.ID, u.Name, fmt.Sprint(u.Locked > 0)})
 				}
 				table(rows)
 			})
@@ -116,7 +111,7 @@ func userCmd() *cobra.Command {
 			if js, err := store.ListJobsOf(db, u.ID); err != nil {
 				return err
 			} else if len(js) > 0 {
-				// The running server owns the downloads; it stops them when the owner removes the user in the app.
+				// The running server owns the downloads; it stops them when the user is removed in the app (admin key).
 				return fmt.Errorf("%s still has %d downloads: remove the user in the app (Settings, Users), or their downloads first", u.Name, len(js))
 			}
 			if _, err := api.RemoveTokens(cfgPath, func(t config.Token) bool { return strings.HasPrefix(t.Name, "u:"+u.ID+":") }); err != nil {
@@ -190,7 +185,7 @@ func connectCmd() *cobra.Command {
 			withDB(func(db *sql.DB) error {
 				us, err := store.ListUsers(db)
 				for _, u := range us {
-					users = append(users, u.Name+map[bool]string{true: " (owner)", false: ""}[u.Owner])
+					users = append(users, u.Name)
 				}
 				return err
 			})
@@ -213,13 +208,65 @@ func connectCmd() *cobra.Command {
   2. In the app: Add server, type the address, accept the certificate, pick your name, enter your PIN.
      In a browser: open the address and sign in the same way.
   3. Everyone gets their own name and PIN and sees only their own downloads.
-     Add people in the app (Settings, Users) or here: sudo getaload user add NAME
+     Add people here (sudo getaload user add NAME) or in the app on a device with server control
+     (sudo getaload admin gives one a code).
 `, port)
 				if len(users) == 0 {
-					fmt.Println("\n  No users yet. Add the first one (the owner): sudo getaload user add NAME")
+					fmt.Println("\n  No users yet. Add the first one: sudo getaload user add NAME")
 				} else {
 					fmt.Printf("\n  Users: %s\n", strings.Join(users, ", "))
 				}
 			})
 		}}
+}
+
+// adminCmd gives a device server control: it prints a one-time code that the app (Settings) trades for an admin
+// key. Run on the server, like `user`; list and remove manage the devices that have a key.
+func adminCmd() *cobra.Command {
+	c := &cobra.Command{Use: "admin", Short: "A one-time code that gives a device server control (run on the server)",
+		RunE: func(*cobra.Command, []string) error {
+			return withDB(func(db *sql.DB) error {
+				code, err := store.NewAdminCode(db, 10*time.Minute)
+				if err != nil {
+					return err
+				}
+				return show(map[string]string{"code": code}, func() {
+					fmt.Printf("\n  Admin code:  %s\n\n  In the app: Settings, Server control, enter this code. It works once, for 10 minutes.\n"+
+						"  Devices with server control: sudo getaload admin list\n\n", code)
+				})
+			})
+		}}
+	c.AddCommand(&cobra.Command{Use: "list", Short: "Devices with server control", RunE: func(*cobra.Command, []string) error {
+		_, cfg, err := config.Load(cfgPath, nil)
+		if err != nil {
+			return err
+		}
+		var names []string
+		for _, t := range cfg.Auth.Tokens {
+			if n, ok := strings.CutPrefix(t.Name, "admin:"); ok {
+				names = append(names, n)
+			}
+		}
+		return show(names, func() {
+			if len(names) == 0 {
+				fmt.Println("No device has server control. Give one with: sudo getaload admin")
+			}
+			for _, n := range names {
+				fmt.Println(n)
+			}
+		})
+	}})
+	c.AddCommand(&cobra.Command{Use: "remove <device>", Short: "Take server control from a device (e.g. a lost phone)", Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, a []string) error {
+			gone, err := api.RemoveTokens(cfgPath, func(t config.Token) bool { return t.Name == "admin:"+a[0] })
+			if err != nil {
+				return err
+			}
+			if len(gone) == 0 {
+				return fmt.Errorf("no device %q has server control (see: getaload admin list)", a[0])
+			}
+			fmt.Println("removed server control from", a[0])
+			return nil
+		}})
+	return c
 }

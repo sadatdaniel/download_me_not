@@ -204,9 +204,8 @@ func (s *server) loginAllowed(addr string) bool {
 }
 
 type userOut struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Owner bool   `json:"owner,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type loginOut struct {
@@ -252,7 +251,7 @@ func (s *server) userRoutes(api huma.API) {
 			us, err := store.ListUsers(s.DB)
 			out := make([]userOut, 0, len(us))
 			for _, u := range us {
-				out = append(out, userOut{u.ID, u.Name, u.Owner})
+				out = append(out, userOut{u.ID, u.Name})
 			}
 			return body(out), err
 		})
@@ -290,11 +289,8 @@ func (s *server) userRoutes(api huma.API) {
 			if err := s.revoke(func(n string) bool { return n == name }); err != nil {
 				return nil, err
 			}
-			scope := "write"
-			if u.Owner {
-				scope = "admin" // the owner also manages the server (users, providers, updates)
-			}
-			tok, err := AddToken(s.CfgPath, name, scope)
+			// A sign-in never controls the server: that takes an admin key (getaload admin, scope §17).
+			tok, err := AddToken(s.CfgPath, name, "write")
 			if err != nil {
 				return nil, err
 			}
@@ -302,16 +298,16 @@ func (s *server) userRoutes(api huma.API) {
 				return nil, err
 			}
 			s.reloadTokens()
-			return body(loginOut{tok, userOut{u.ID, u.Name, u.Owner}, s.Fingerprint}), nil
+			return body(loginOut{tok, userOut{u.ID, u.Name}, s.Fingerprint}), nil
 		})
 
 	huma.Register(api, op("me", "GET", "/v1/me", "read", "The signed-in user"),
 		func(ctx context.Context, _ *struct{}) (*struct{ Body userOut }, error) {
 			u, err := s.me(ctx)
-			return body(userOut{u.ID, u.Name, u.Owner}), err
+			return body(userOut{u.ID, u.Name}), err
 		})
 
-	huma.Register(api, op("add-user", "POST", "/v1/users", "admin", "Add a user (the owner; or any admin token while there are no users: that first user becomes the owner)"),
+	huma.Register(api, op("add-user", "POST", "/v1/users", "admin", "Add a user (admin key)"),
 		func(ctx context.Context, in *struct {
 			Body struct {
 				Name string `json:"name" minLength:"1" maxLength:"40"`
@@ -321,11 +317,6 @@ func (s *server) userRoutes(api huma.API) {
 			Status int
 			Body   userOut
 		}, error) {
-			if s.hasUsers() {
-				if me, err := s.me(ctx); err != nil || !me.Owner {
-					return nil, huma.Error403Forbidden("only the owner adds users")
-				}
-			}
 			u, err := store.CreateUser(s.DB, in.Body.Name, in.Body.PIN)
 			if err != nil {
 				return nil, huma.Error400BadRequest(err.Error())
@@ -333,10 +324,10 @@ func (s *server) userRoutes(api huma.API) {
 			return &struct {
 				Status int
 				Body   userOut
-			}{http.StatusCreated, userOut{u.ID, u.Name, u.Owner}}, nil
+			}{http.StatusCreated, userOut{u.ID, u.Name}}, nil
 		})
 
-	huma.Register(api, op("set-pin", "PUT", "/v1/users/{id}/pin", "write", "Change a PIN: your own (with the current one), or anyone's as the owner"),
+	huma.Register(api, op("set-pin", "PUT", "/v1/users/{id}/pin", "write", "Change your own PIN (with the current one); an admin key resets anyone's with PUT /v1/admin/users/{id}/pin"),
 		func(ctx context.Context, in *struct {
 			ID   string `path:"id"`
 			Body struct {
@@ -348,13 +339,11 @@ func (s *server) userRoutes(api huma.API) {
 			if err != nil {
 				return nil, err
 			}
-			switch {
-			case me.ID == in.ID:
-				if _, err := store.CheckPIN(s.DB, me.ID, in.Body.Current); err != nil {
-					return nil, pinErr(err)
-				}
-			case !me.Owner:
-				return nil, huma.Error403Forbidden("only the owner resets other people's PINs")
+			if me.ID != in.ID {
+				return nil, huma.Error403Forbidden("you can change only your own PIN")
+			}
+			if _, err := store.CheckPIN(s.DB, me.ID, in.Body.Current); err != nil {
+				return nil, pinErr(err)
 			}
 			if err := store.SetPIN(s.DB, in.ID, in.Body.PIN); err != nil {
 				return nil, pinErr(err)
@@ -362,18 +351,11 @@ func (s *server) userRoutes(api huma.API) {
 			return nil, nil
 		})
 
-	huma.Register(api, op("delete-user", "DELETE", "/v1/users/{id}", "admin", "Remove a user (the owner): stops their downloads and signs out their devices; deleteFiles also deletes their folder"),
+	huma.Register(api, op("delete-user", "DELETE", "/v1/users/{id}", "admin", "Remove a user (admin key): stops their downloads and signs out their devices; deleteFiles also deletes their folder"),
 		func(ctx context.Context, in *struct {
 			ID          string `path:"id"`
 			DeleteFiles bool   `query:"deleteFiles"`
 		}) (*struct{}, error) {
-			me, err := s.me(ctx)
-			if err != nil || !me.Owner {
-				return nil, huma.Error403Forbidden("only the owner removes users")
-			}
-			if in.ID == me.ID {
-				return nil, huma.Error400BadRequest("the owner can't remove themselves")
-			}
 			if _, err := store.GetUser(s.DB, in.ID); err != nil {
 				return nil, pinErr(err)
 			}

@@ -113,6 +113,11 @@ func (s *server) setTokens(ts []config.Token) {
 func New(d Deps) (http.Handler, huma.API) {
 	s := &server{Deps: d}
 	s.setTokens(d.Cfg.Auth.Tokens)
+	if err := DowngradeSignIns(d.CfgPath); err != nil {
+		fmt.Fprintln(os.Stderr, "admin keys: could not turn old owner sign-ins into plain ones:", err)
+	} else {
+		s.reloadTokens()
+	}
 	if fi, err := os.Stat(d.CfgPath); err == nil {
 		s.cfgMtime = fi.ModTime()
 	}
@@ -138,8 +143,8 @@ func New(d Deps) (http.Handler, huma.API) {
 			huma.WriteErr(api, ctx, http.StatusUnauthorized, "missing or invalid token")
 		case rank[have] < rank[need]:
 			huma.WriteErr(api, ctx, http.StatusForbidden, "this token has scope "+have+"; "+need+" is required")
-		// Once users exist, a device that has not signed in reaches only server-wide admin routes (an install's
-		// owner token), never anyone's downloads or files.
+		// Once users exist, a token without a user (the command-line token, an admin key) reaches only server-wide
+		// admin routes, never anyone's downloads or files.
 		case user == "" && need != "admin" && s.hasUsers():
 			huma.WriteErr(api, ctx, http.StatusForbidden, "sign in with your name and PIN first (POST /v1/login)")
 		default:
@@ -236,6 +241,7 @@ func (s *server) routes(api huma.API) {
 	s.cleanupRoutes(api)
 	s.addonRoutes(api)
 	s.addonProxyRoutes(api)
+	s.adminRoutes(api)
 
 	sse.Register(api, op("events", "GET", "/v1/events", "read", "Live progress of running jobs (server-sent events, every second)"),
 		map[string]any{"progress": []jobs.Progress{}},
@@ -409,7 +415,7 @@ func (s *server) routes(api huma.API) {
 			d, u := s.Limits.Get()
 			return body(limitsBody{d, u}), nil
 		})
-	huma.Register(api, op("set-limits", "PUT", "/v1/limits", "admin", "Change global bandwidth limits (the owner; applies immediately, saved to config)"),
+	huma.Register(api, op("set-limits", "PUT", "/v1/limits", "admin", "Change global bandwidth limits (admin key; applies immediately, saved to config)"),
 		func(ctx context.Context, in *struct{ Body limitsBody }) (*struct{}, error) {
 			s.Limits.Set(in.Body.Down, in.Body.Up)
 			if err := config.Set(s.CfgPath, "limits.down", in.Body.Down); err != nil {

@@ -24,8 +24,8 @@ sudo sh /tmp/getaload/install.sh --from /tmp/getaload
 
 The installer verifies the release signature and checksum, creates a `getaload` system user, installs
 `/opt/getaload/bin/getaload` (linked as `/usr/local/bin/getaload`), writes `/etc/getaload/config.yaml`, creates the
-**owner token** (printed once; for scripts and server-wide settings), asks for **your name and a 4-digit
-PIN** (you become the first user, the owner), starts the `getaload` service and prints **how to connect**: the
+**command-line token** (printed once; for scripts), asks for **your name and a 4-digit PIN** (the first
+user), prints an **admin code** (gives one device server control, see below), starts the `getaload` service and prints **how to connect**: the
 address, the certificate fingerprint and the ports to open. `sudo getaload connect` shows that again.
 Without a terminal (cloud-init, CI) pass `--user NAME --pin NNNN`, or add the user later with `sudo getaload user add NAME`.
 
@@ -41,7 +41,7 @@ Options (or the matching `GETALOAD_*` environment variables):
 | `--data-dir DIR` | /var/lib/getaload | Database, tools, certificates |
 | `--version vX.Y.Z` | latest | A specific release |
 | `--no-start` | | Install without starting |
-| `--user NAME --pin NNNN` | asked | The first user (the owner); `GETALOAD_USER`, `GETALOAD_PIN` work too |
+| `--user NAME --pin NNNN` | asked | The first user; `GETALOAD_USER`, `GETALOAD_PIN` work too |
 | `--yes` | | No questions (without `--user`, add users later) |
 
 The installer also installs ffmpeg with the system package manager (skip with `--no-ffmpeg`); the
@@ -62,8 +62,8 @@ Service: `systemctl status getaload`, logs: `journalctl -u getaload -f`.
 ```sh
 # compose.yaml from this repository
 docker compose up -d
-docker compose logs getaload          # first start prints the owner token once
-docker compose exec getaload getaload user add NAME    # the first user (the owner); asks for a PIN
+docker compose logs getaload          # first start prints the command-line token once
+docker compose exec getaload getaload user add NAME    # the first user; asks for a PIN
 docker compose exec getaload getaload connect          # address, fingerprint and the ports to open
 ```
 
@@ -85,12 +85,18 @@ To use a host folder for downloads, replace the `downloads` volume with e.g.
    installer or `sudo getaload connect` printed.
 2. **Sign in**: tap your name and enter your PIN. Each device gets its own token and stays signed in;
    Settings, Your account lists your devices and signs any of them out.
-3. **Add the others**: Settings, **Users**, Add a user (owner only), or `sudo getaload user add NAME` on the
-   server. Users are strictly separate: own downloads (`<downloads>/users/<id>/`), files, links and watch
-   progress; nobody sees anyone else's, not even the owner. The owner also manages server-wide settings
-   (add-ons, Google Drive, updates).
-4. **PINs**: change your own in Settings, Your account. Five wrong tries lock a name for a minute,
-   doubling up to an hour. Forgotten: the owner resets it (Settings, Users), or on the server
+3. **Server control**: everyone is a plain user. Adding people, PIN resets, updates, add-ons and speed
+   limits take **server control**: run `sudo getaload admin` on the server and enter the code it shows in the
+   app (Settings, Server control). The code works once, for 10 minutes; the device keeps an admin key.
+   `sudo getaload admin list` shows the devices with control, `sudo getaload admin remove NAME` takes it away
+   (a lost phone); a device with control can do the same in Settings. Each person still connects their own
+   Google Drive.
+4. **Add the others**: on a device with server control, Settings, People on this server, Add a person; or
+   `sudo getaload user add NAME` on the server. Users are strictly separate: own downloads
+   (`<downloads>/users/<id>/`), files, links and watch progress; nobody sees anyone else's, not even with
+   server control.
+5. **PINs**: change your own in Settings, Your account. Five wrong tries lock a name for a minute,
+   doubling up to an hour. Forgotten: a device with server control resets it (People on this server), or on the server
    `sudo getaload user pin NAME` (also unlocks). `sudo getaload user list`, `sudo getaload user remove NAME`.
 
 **CLI**: on the server, run `getaload` with `sudo` (it uses `/etc/getaload/config.yaml` and keeps files owned by the

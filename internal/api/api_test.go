@@ -291,7 +291,7 @@ func TestDriveConnect(t *testing.T) {
 	// With users, everyone connects their own Drive: Alice's sign-in is hers only.
 	call(t, srv, "POST", "/v1/users", "admin-tok", `{"name":"Alice","pin":"1111"}`)
 	a, _ := login(t, srv, "Alice", "1111", "phone")
-	call(t, srv, "POST", "/v1/users", a, `{"name":"Bob","pin":"2222"}`)
+	call(t, srv, "POST", "/v1/users", "admin-tok", `{"name":"Bob","pin":"2222"}`)
 	b2, _ := login(t, srv, "Bob", "2222", "phone")
 	if _, d := call(t, srv, "GET", "/v1/me/drive", a, ""); !strings.Contains(d, `"connected":false`) {
 		t.Fatalf("Alice starts unconnected (the old server-wide token is not hers): %s", d)
