@@ -1,4 +1,4 @@
-// getaload control panel. A plain client of the /v1 API (same as the Android app).
+// GetALoad control panel. A plain client of the /v1 API (same as the Android app).
 import { h, render } from './vendor/preact.module.js';
 import { useState, useEffect, useRef, useCallback } from './vendor/hooks.module.js';
 import htm from './vendor/htm.module.js';
@@ -107,7 +107,7 @@ function Login({ onDone }) {
   };
   if (!users) return null;
   return html`<div class="card login">
-    <h2>getaload</h2>
+    <h2>GetALoad</h2>
     <form onSubmit=${submit}>
       ${users.length ? html`
         <select value=${name} onChange=${e => setName(e.target.value)} autofocus>
@@ -484,7 +484,7 @@ function App() {
   const onPlay = (src, name) => setPlayer({ src, name });
   return html`
     <header>
-      <span class="brand">getaload</span>
+      <span class="brand">GetALoad</span>
       <nav>${nav.map(([r, t]) => html`<a href=${r} class=${route === r ? 'on' : ''}>${t}</a>`)}</nav>
       <button onClick=${onUnauthorized}>Sign out</button>
     </header>
