@@ -26,8 +26,8 @@ jobs:
       - run: CGO_ENABLED=1 go test -race -count=1 $(go list ./... | grep -v /spike/)
       - name: static cross-build
         run: |
-          for a in amd64 arm64 arm; do CGO_ENABLED=0 GOARCH=$a GOARM=7 go build -o /tmp/dmn-$a ./cmd/dmn; done
-          file /tmp/dmn-amd64 | grep -q "statically linked"
+          for a in amd64 arm64 arm; do CGO_ENABLED=0 GOARCH=$a GOARM=7 go build -o /tmp/getaload-$a ./cmd/getaload; done
+          file /tmp/getaload-amd64 | grep -q "statically linked"
   gitleaks:
     runs-on: ubuntu-latest
     steps:

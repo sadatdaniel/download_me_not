@@ -17,7 +17,7 @@ func TestCopyAndMove(t *testing.T) {
 		t.Skip("rclone not installed (use the dev container)")
 	}
 	src := t.TempDir()
-	data := bytes.Repeat([]byte("download_me_not "), 64<<10) // 1 MiB
+	data := bytes.Repeat([]byte("getaload "), 64<<10) // 1 MiB
 	os.WriteFile(filepath.Join(src, "movie.bin"), data, 0o644)
 	os.MkdirAll(filepath.Join(src, "season", "e1"), 0o755)
 	os.WriteFile(filepath.Join(src, "season", "e1", "ep.bin"), data[:1000], 0o644)

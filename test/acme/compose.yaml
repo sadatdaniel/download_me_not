@@ -15,7 +15,7 @@ services:
     command: -config test/config/pebble-config.json -strict -dnsserver 10.77.0.30:8053
     environment: { PEBBLE_VA_NOSLEEP: "1" }
     networks: { acme: { ipv4_address: 10.77.0.20 } }
-  dmn:
+  getaload:
     image: dmn-dev:latest
     working_dir: /src
     volumes:
@@ -23,14 +23,14 @@ services:
       - dmn-dev_dmn-gomod:/go/pkg/mod
       - dmn-dev_dmn-gocache:/root/.cache/go-build
       - pebble-root:/pebble:ro
-    environment: { GOFLAGS: -mod=mod, GOPROXY: "off", CGO_ENABLED: "0", DMN_CONFIG: /tmp/c/config.yaml, HOME: /tmp/h }
+    environment: { GOFLAGS: -mod=mod, GOPROXY: "off", CGO_ENABLED: "0", GETALOAD_CONFIG: /tmp/c/config.yaml, HOME: /tmp/h }
     # HTTPS on 5001 (Pebble's TLS-ALPN port) and HTTP on 5002 (its HTTP-01 port).
     command: >
-      sh -c "go build -buildvcs=false -o /tmp/dmn ./cmd/dmn && /tmp/dmn setup >/dev/null &&
-      /tmp/dmn config set server.tls acme && /tmp/dmn config set server.domain dl.test &&
-      /tmp/dmn config set server.listen 0.0.0.0:5001 && /tmp/dmn config set server.httplisten 0.0.0.0:5002 &&
-      /tmp/dmn config set server.acmeca https://pebble:14000/dir && /tmp/dmn config set server.acmecaroot /pebble/pebble.minica.pem &&
-      exec /tmp/dmn serve"
+      sh -c "go build -buildvcs=false -o /tmp/getaload ./cmd/getaload && /tmp/getaload setup >/dev/null &&
+      /tmp/getaload config set server.tls acme && /tmp/getaload config set server.domain dl.test &&
+      /tmp/getaload config set server.listen 0.0.0.0:5001 && /tmp/getaload config set server.httplisten 0.0.0.0:5002 &&
+      /tmp/getaload config set server.acmeca https://pebble:14000/dir && /tmp/getaload config set server.acmecaroot /pebble/pebble.minica.pem &&
+      exec /tmp/getaload serve"
     networks: { acme: { ipv4_address: 10.77.0.10 } }
 volumes:
   dmn-dev_dmn-gomod: { external: true }

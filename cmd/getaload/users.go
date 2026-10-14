@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sadatdaniel/download_me_not/internal/api"
-	"github.com/sadatdaniel/download_me_not/internal/config"
-	"github.com/sadatdaniel/download_me_not/internal/store"
-	"github.com/sadatdaniel/download_me_not/internal/tlsutil"
+	"github.com/sadatdaniel/getaload/internal/api"
+	"github.com/sadatdaniel/getaload/internal/config"
+	"github.com/sadatdaniel/getaload/internal/store"
+	"github.com/sadatdaniel/getaload/internal/tlsutil"
 )
 
 // withDB opens the server's database (also while the service runs: SQLite WAL).
@@ -26,14 +26,14 @@ func withDB(f func(db *sql.DB) error) error {
 	if err := os.MkdirAll(cfg.Paths.Data, 0o700); err != nil {
 		return err
 	}
-	dbPath := filepath.Join(cfg.Paths.Data, "dmn.db")
+	dbPath := filepath.Join(cfg.Paths.Data, "getaload.db")
 	db, err := store.Open(dbPath)
 	if err != nil {
 		return err
 	}
 	err = f(db)
 	db.Close()
-	// `sudo dmn user ...` must not leave root-owned database files that lock the service out.
+	// `sudo getaload user ...` must not leave root-owned database files that lock the service out.
 	if fi, e := os.Stat(cfg.Paths.Data); e == nil && os.Geteuid() == 0 {
 		if st, ok := fi.Sys().(*syscall.Stat_t); ok {
 			for _, p := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
@@ -51,7 +51,7 @@ func userCmd() *cobra.Command {
 	c := &cobra.Command{Use: "user", Short: "Household users (name + 4-digit PIN); run on the server"}
 
 	pinFlag := func(cmd *cobra.Command) *string {
-		return cmd.Flags().String("pin", "", "4-digit PIN (default: env DMN_PIN, else asked)")
+		return cmd.Flags().String("pin", "", "4-digit PIN (default: env GETALOAD_PIN, else asked)")
 	}
 
 	add := &cobra.Command{Use: "add <name>", Short: "Add a user (the first one becomes the owner)", Args: cobra.ExactArgs(1)}
@@ -133,10 +133,10 @@ func userCmd() *cobra.Command {
 	return c
 }
 
-// loginCmd signs this CLI in as a user and prints the device token to use with --token / DMN_TOKEN.
+// loginCmd signs this CLI in as a user and prints the device token to use with --token / GETALOAD_TOKEN.
 func loginCmd() *cobra.Command {
 	c := &cobra.Command{Use: "login <name>", Short: "Sign in as a user; prints this device's token", Args: cobra.ExactArgs(1)}
-	p := c.Flags().String("pin", "", "4-digit PIN (default: env DMN_PIN, else asked)")
+	p := c.Flags().String("pin", "", "4-digit PIN (default: env GETALOAD_PIN, else asked)")
 	dev := c.Flags().String("device", "cli", "device name; signing in again with it replaces its token")
 	c.RunE = func(_ *cobra.Command, a []string) error {
 		var out struct {
@@ -145,7 +145,7 @@ func loginCmd() *cobra.Command {
 		if err := call("POST", "/v1/login", map[string]string{"name": a[0], "pin": askPIN(*p), "device": *dev}, &out); err != nil {
 			return err
 		}
-		return show(out, func() { fmt.Printf("Signed in. Use it with: export DMN_TOKEN=%s\n", out.Token) })
+		return show(out, func() { fmt.Printf("Signed in. Use it with: export GETALOAD_TOKEN=%s\n", out.Token) })
 	}
 	return c
 }
@@ -154,7 +154,7 @@ func askPIN(flag string) string {
 	if flag != "" {
 		return flag
 	}
-	if p := os.Getenv("DMN_PIN"); p != "" {
+	if p := os.Getenv("GETALOAD_PIN"); p != "" {
 		return p
 	}
 	fmt.Fprint(os.Stderr, "PIN (4 digits): ")
@@ -164,7 +164,7 @@ func askPIN(flag string) string {
 }
 
 // connectCmd explains how to reach this server: the address to type in the app, the certificate fingerprint to
-// compare, the ports to open and how people sign in. The installer prints it; `sudo dmn connect` shows it again.
+// compare, the ports to open and how people sign in. The installer prints it; `sudo getaload connect` shows it again.
 func connectCmd() *cobra.Command {
 	return &cobra.Command{Use: "connect", Short: "How to connect the app and the web panel to this server (run on the server)",
 		RunE: func(*cobra.Command, []string) error {
@@ -213,10 +213,10 @@ func connectCmd() *cobra.Command {
   2. In the app: Add server, type the address, accept the certificate, pick your name, enter your PIN.
      In a browser: open the address and sign in the same way.
   3. Everyone gets their own name and PIN and sees only their own downloads.
-     Add people in the app (Settings, Users) or here: sudo dmn user add NAME
+     Add people in the app (Settings, Users) or here: sudo getaload user add NAME
 `, port)
 				if len(users) == 0 {
-					fmt.Println("\n  No users yet. Add the first one (the owner): sudo dmn user add NAME")
+					fmt.Println("\n  No users yet. Add the first one (the owner): sudo getaload user add NAME")
 				} else {
 					fmt.Printf("\n  Users: %s\n", strings.Join(users, ", "))
 				}

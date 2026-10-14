@@ -30,19 +30,23 @@ jobs:
         run: |
           set -eux
           prev=$(gh release list -R "$REPO" --limit 2 --json tagName --jq '.[1].tagName')
-          gh release download "$prev" -R "$REPO" -p 'dmn_*_linux_amd64.tar.gz' -D old
+          # Releases before the rename were "dmn"; they move over with install.sh, not by updating themselves.
+          if ! gh release view "$prev" -R "$REPO" --json assets --jq '.assets[].name' | grep -q '^getaload_'; then
+            echo "previous release $prev predates the getaload rename: nothing to update from"; exit 0
+          fi
+          gh release download "$prev" -R "$REPO" -p 'getaload_*_linux_amd64.tar.gz' -D old
           tar -xzf old/*.tar.gz -C old
-          export DMN_CONFIG=$PWD/c/config.yaml HOME=$PWD/h
-          ./old/dmn setup --json > s.json
-          export DMN_TOKEN=$(jq -r .token s.json)
-          ./old/dmn serve > serve.log 2>&1 &
+          export GETALOAD_CONFIG=$PWD/c/config.yaml HOME=$PWD/h
+          ./old/getaload setup --json > s.json
+          export GETALOAD_TOKEN=$(jq -r .token s.json)
+          ./old/getaload serve > serve.log 2>&1 &
           sleep 3
-          ./old/dmn update check
-          ./old/dmn update apply
+          ./old/getaload update check
+          ./old/getaload update apply
           sleep 5
-          ./old/dmn version | tee v.txt
+          ./old/getaload version | tee v.txt
           grep -qx "${GITHUB_REF_NAME#v}" v.txt
-          test -f old/dmn.prev  # previous binary kept for rollback
+          test -f old/getaload.prev  # previous binary kept for rollback
   # Tier 1 image with every helper tool, for amd64, arm64 and armv7, on GHCR.
   image:
     needs: release

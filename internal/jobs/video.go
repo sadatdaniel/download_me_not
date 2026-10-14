@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sadatdaniel/download_me_not/internal/cookies"
-	"github.com/sadatdaniel/download_me_not/internal/httpdl"
-	"github.com/sadatdaniel/download_me_not/internal/store"
-	"github.com/sadatdaniel/download_me_not/internal/video"
+	"github.com/sadatdaniel/getaload/internal/cookies"
+	"github.com/sadatdaniel/getaload/internal/httpdl"
+	"github.com/sadatdaniel/getaload/internal/store"
+	"github.com/sadatdaniel/getaload/internal/video"
 )
 
 // runVideo downloads a video page with yt-dlp. Pausing kills yt-dlp; resuming runs it again and it
@@ -123,7 +123,7 @@ func (m *Manager) withCookies(src, user string, h http.Header) {
 func (m *Manager) videoRunner(src, user string) (*video.Runner, func(), error) {
 	vr := m.o.Video()
 	if vr == nil {
-		return nil, nil, errors.New("yt-dlp could not be installed on the server (it is installed automatically; see `dmn doctor`)")
+		return nil, nil, errors.New("yt-dlp could not be installed on the server (it is installed automatically; see `getaload doctor`)")
 	}
 	r := *vr
 	done := func() {}

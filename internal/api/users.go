@@ -14,10 +14,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/time/rate"
 
-	"github.com/sadatdaniel/download_me_not/internal/config"
-	"github.com/sadatdaniel/download_me_not/internal/fsapi"
-	"github.com/sadatdaniel/download_me_not/internal/jobs"
-	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/getaload/internal/config"
+	"github.com/sadatdaniel/getaload/internal/fsapi"
+	"github.com/sadatdaniel/getaload/internal/jobs"
+	"github.com/sadatdaniel/getaload/internal/store"
 )
 
 // Household users (scope §17): name + 4-digit PIN. Signing in creates a token for that device; the token

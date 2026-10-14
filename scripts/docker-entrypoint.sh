@@ -3,12 +3,12 @@
 # they are managed there: updated daily with checksum checks and rollback, without a new image.
 set -e
 mkdir -p /data/bin
-for f in /opt/dmn-seed/bin/*; do
+for f in /opt/getaload-seed/bin/*; do
 	[ -e "$f" ] || continue
 	[ -e "/data/bin/$(basename "$f")" ] || cp -p "$f" /data/bin/
 done
 # First start: create the signing key and the owner token (printed once in the log).
-if [ "$1" = serve ] && ! grep -q signkey "$DMN_CONFIG" 2>/dev/null; then
-	dmn setup
+if [ "$1" = serve ] && ! grep -q signkey "$GETALOAD_CONFIG" 2>/dev/null; then
+	getaload setup
 fi
-exec dmn "$@"
+exec getaload "$@"

@@ -24,17 +24,17 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 	"golang.org/x/oauth2"
 
-	"github.com/sadatdaniel/download_me_not/internal/addons"
-	"github.com/sadatdaniel/download_me_not/internal/config"
-	"github.com/sadatdaniel/download_me_not/internal/cookies"
-	"github.com/sadatdaniel/download_me_not/internal/fsapi"
-	"github.com/sadatdaniel/download_me_not/internal/jobs"
-	"github.com/sadatdaniel/download_me_not/internal/limits"
-	"github.com/sadatdaniel/download_me_not/internal/provider"
-	"github.com/sadatdaniel/download_me_not/internal/secret"
-	"github.com/sadatdaniel/download_me_not/internal/store"
-	"github.com/sadatdaniel/download_me_not/internal/tools"
-	"github.com/sadatdaniel/download_me_not/internal/webui"
+	"github.com/sadatdaniel/getaload/internal/addons"
+	"github.com/sadatdaniel/getaload/internal/config"
+	"github.com/sadatdaniel/getaload/internal/cookies"
+	"github.com/sadatdaniel/getaload/internal/fsapi"
+	"github.com/sadatdaniel/getaload/internal/jobs"
+	"github.com/sadatdaniel/getaload/internal/limits"
+	"github.com/sadatdaniel/getaload/internal/provider"
+	"github.com/sadatdaniel/getaload/internal/secret"
+	"github.com/sadatdaniel/getaload/internal/store"
+	"github.com/sadatdaniel/getaload/internal/tools"
+	"github.com/sadatdaniel/getaload/internal/webui"
 )
 
 type Deps struct {
@@ -86,7 +86,7 @@ func (s *server) scope(authz string) string {
 	if sc, ok := s.tokens[h]; ok {
 		return sc
 	}
-	// Unknown token: maybe `dmn pair` or `dmn setup` just added it. Reload when the config file
+	// Unknown token: maybe `getaload pair` or `getaload setup` just added it. Reload when the config file
 	// changed, at most once a second, so new devices work without a restart.
 	if time.Since(s.checked) > time.Second {
 		s.checked = time.Now()
@@ -116,7 +116,7 @@ func New(d Deps) (http.Handler, huma.API) {
 		s.cfgMtime = fi.ModTime()
 	}
 	mux := http.NewServeMux()
-	cfg := huma.DefaultConfig("download_me_not", d.Version)
+	cfg := huma.DefaultConfig("getaload", d.Version)
 	cfg.Components.SecuritySchemes = map[string]*huma.SecurityScheme{"bearer": {Type: "http", Scheme: "bearer"}}
 	api := humago.New(mux, cfg)
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {

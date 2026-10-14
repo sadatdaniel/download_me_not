@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>getaload</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1f2328; --muted: #59636e; --bg: #fff; --link: #4f46e5; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117; --link: #a5b4fc; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 48px 16px; }
+  h1 { margin: 0 0 4px; font-size: 32px; }
+  p.lead { color: var(--muted); margin-top: 0; }
+  a { color: var(--link); }
+  li { margin: 4px 0; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>getaload</h1>
+  <p class="lead">A self-hosted download server with an Android app.</p>
+  <p>Send it a web link, a video page, a magnet link or a .torrent; it downloads on <strong>your own server</strong>,
+  and you browse, stream or copy the results from the app, the web panel or the command line. Several people can
+  share one server, each with their own name, PIN and files.</p>
+  <ul>
+    <li>Web downloads with many connections, resume and retry</li>
+    <li>Video pages through yt-dlp, with quality, format and subtitles</li>
+    <li>Torrents, including watching while downloading</li>
+    <li>Optional copies to the user's own Google Drive</li>
+  </ul>
+  <p>Source code, installation and documentation:
+  <a href="https://github.com/sadatdaniel/getaload">github.com/sadatdaniel/getaload</a>.</p>
+  <footer><a href="privacy.html">Privacy policy</a> · Questions: <a href="https://github.com/sadatdaniel/getaload/issues">GitHub issues</a></footer>
+</main>
+</body>
+</html>

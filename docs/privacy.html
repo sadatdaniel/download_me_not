@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>getaload privacy policy</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1f2328; --muted: #59636e; --bg: #fff; --link: #4f46e5; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #e6edf3; --muted: #9198a1; --bg: #0d1117; --link: #a5b4fc; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 48px 16px; }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  h2 { font-size: 19px; margin-top: 28px; }
+  p.lead { color: var(--muted); margin-top: 0; }
+  a { color: var(--link); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy policy</h1>
+  <p class="lead">getaload · last updated 14 October 2026</p>
+
+  <h2>Who runs what</h2>
+  <p>getaload is software that people install on a server they control. There is no getaload service: the
+  developers do not run servers for users and receive no data from installations. Whoever installs a getaload
+  server is responsible for it and for the people they give accounts to.</p>
+
+  <h2>What a getaload server stores</h2>
+  <p>On its own disk only: the downloads its users ask for, each user's name and a hash of their PIN, per-device
+  sign-in tokens (stored hashed), each user's settings and watch progress, and, if a user adds them, their cookies
+  for sites that need a sign-in. Secrets are stored encrypted. Nothing is sent to the developers or to third
+  parties, except the requests a user's own downloads need and the server's checks for new releases of itself and
+  its helper tools on GitHub.</p>
+
+  <h2>Google user data</h2>
+  <p>If a user chooses to connect Google Drive, getaload asks Google only for the <code>drive.file</code>
+  permission: access to the files that getaload itself creates in that user's Drive, not to anything else in it.
+  getaload uses this solely to upload the files the user asks it to copy there. The resulting Google token is stored
+  encrypted on that user's own server, for that user only, and is not shared with anyone. It is not used for
+  advertising, not sold, and not used to train AI or machine learning models.</p>
+  <p>getaload's use of information received from Google APIs adheres to the
+  <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data
+  Policy</a>, including the Limited Use requirements.</p>
+
+  <h2>Removing access</h2>
+  <p>A user can disconnect Google Drive at any time in the app (Settings, Google Drive, Disconnect), which deletes the
+  token from the server, or revoke access in their
+  <a href="https://myaccount.google.com/permissions">Google Account permissions</a>. Removing a user from a server
+  deletes their sign-ins, cookies and Google token.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: <a href="https://github.com/sadatdaniel/getaload/issues">GitHub issues</a>.</p>
+  <p><a href="index.html">getaload home</a></p>
+</main>
+</body>
+</html>

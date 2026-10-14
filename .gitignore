@@ -1,7 +1,7 @@
 # build output
 /dist/
 /bin/
-/dmn
+/getaload
 *.exe
 
 # runtime data, downloads, secrets
@@ -27,8 +27,11 @@ Thumbs.db
 !internal/engine/testdata/*.torrent
 
 # local docker compose volumes
-/dmn/
+/getaload/
 
 # release signing key (CI only)
 release-key.pem
 /THIRD_PARTY_LICENSES.txt
+
+# install simulation output (contains a throwaway token)
+test/sim/install.log

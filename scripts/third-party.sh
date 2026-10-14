@@ -1,14 +1,14 @@
 #!/bin/sh
-# Prints the licences of every Go module linked into dmn, plus the vendored web UI libraries
+# Prints the licences of every Go module linked into getaload, plus the vendored web UI libraries
 # (scope §11: every release ships a third-party licences file). Fails if a GPL/AGPL licence
 # appears, because the binary must not link GPL code (AGENTS.md rule 3). Used by GoReleaser and CI.
 #   sh scripts/third-party.sh > THIRD_PARTY_LICENSES.txt
 set -eu
 cd "$(dirname "$0")/.."
 bad=0
-echo "download_me_not bundles the following third-party software."
+echo "getaload bundles the following third-party software."
 echo
-go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd/dmn | sort -u |
+go list -deps -f '{{with .Module}}{{if not .Main}}{{.Path}}@{{.Version}} {{.Dir}}{{end}}{{end}}' ./cmd/getaload | sort -u |
 while read -r mod dir; do
 	lic=$(ls "$dir" 2>/dev/null | grep -i -E '^(licen[cs]e|copying|notice)' | head -1 || true)
 	echo "================================================================================"

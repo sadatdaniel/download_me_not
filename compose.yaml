@@ -1,14 +1,14 @@
-# Start:   docker compose up -d       (the first start prints your API token: docker compose logs dmn)
-# Pair:    docker compose exec dmn dmn pair --url https://<server-ip>:8080
+# Start:   docker compose up -d       (the first start prints your API token: docker compose logs getaload)
+# Pair:    docker compose exec getaload getaload pair --url https://<server-ip>:8080
 # Update:  docker compose pull && docker compose up -d
 # Helper tools (yt-dlp, rclone, deno) also update themselves daily inside the data volume.
 services:
-  dmn:
-    image: ghcr.io/sadatdaniel/download_me_not:latest
+  getaload:
+    image: ghcr.io/sadatdaniel/getaload:latest
     build: .
     restart: unless-stopped
     ports:
-      - "8080:8080"          # HTTPS with a self-signed certificate (the app pins it via `dmn pair`)
+      - "8080:8080"          # HTTPS with a self-signed certificate (the app pins it via `getaload pair`)
       - "42069:42069"        # torrents
       - "42069:42069/udp"
     volumes:

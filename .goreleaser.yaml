@@ -1,4 +1,4 @@
-# Binary name "dmn" is a placeholder (AGENTS.md rule 10).
+# Binary name "getaload" (renamed from "dmn"; see AGENTS.md rule 10).
 # M3 adds: ECDSA signature of checksums.txt for go-selfupdate, a public releases repo, and the Docker image.
 version: 2
 before:
@@ -6,9 +6,9 @@ before:
     # Licences of everything linked into the binary; fails on GPL/AGPL (AGENTS.md rule 3).
     - sh -c "sh scripts/third-party.sh > THIRD_PARTY_LICENSES.txt"
 builds:
-  - id: dmn
-    main: ./cmd/dmn
-    binary: dmn
+  - id: getaload
+    main: ./cmd/getaload
+    binary: getaload
     env: [CGO_ENABLED=0]
     goos: [linux]
     goarch: [amd64, arm64, arm]
@@ -17,8 +17,8 @@ builds:
     ldflags: ["-s -w -X main.version={{.Version}}"]
 archives:
   - formats: [tar.gz]
-    # install.sh looks for dmn_<version>_linux_<arch>; go-selfupdate matches the _linux_<arch> suffix.
-    name_template: "dmn_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
+    # install.sh looks for getaload_<version>_linux_<arch>; go-selfupdate matches the _linux_<arch> suffix.
+    name_template: "getaload_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}"
     files: [README*, THIRD_PARTY*]
 checksum:
   name_template: checksums.txt

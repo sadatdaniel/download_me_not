@@ -28,11 +28,11 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/sadatdaniel/download_me_not/internal/cookies"
-	"github.com/sadatdaniel/download_me_not/internal/engine"
-	"github.com/sadatdaniel/download_me_not/internal/httpdl"
-	"github.com/sadatdaniel/download_me_not/internal/store"
-	"github.com/sadatdaniel/download_me_not/internal/video"
+	"github.com/sadatdaniel/getaload/internal/cookies"
+	"github.com/sadatdaniel/getaload/internal/engine"
+	"github.com/sadatdaniel/getaload/internal/httpdl"
+	"github.com/sadatdaniel/getaload/internal/store"
+	"github.com/sadatdaniel/getaload/internal/video"
 )
 
 type Options struct {

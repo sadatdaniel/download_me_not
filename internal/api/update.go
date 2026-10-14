@@ -7,7 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/sadatdaniel/download_me_not/internal/update"
+	"github.com/sadatdaniel/getaload/internal/update"
 )
 
 // Updates is the server-update state shared with the daily checker.

@@ -1,5 +1,5 @@
 // Package config loads the single config file with precedence
-// flags > environment (DMN_*) > file > defaults (scope §5.11).
+// flags > environment (GETALOAD_*) > file > defaults (scope §5.11).
 package config
 
 import (
@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Keys are single lowercase words so DMN_SERVER_LISTEN maps cleanly to server.listen.
+// Keys are single lowercase words so GETALOAD_SERVER_LISTEN maps cleanly to server.listen.
 type Config struct {
 	Server struct {
 		Listen string `koanf:"listen"`
@@ -93,20 +93,20 @@ var FlagKeys = map[string]string{
 var secret = []string{"auth.", "server.dnstoken", "updates.token"}
 
 // SystemPath is where install.sh puts the config.
-const SystemPath = "/etc/dmn/config.yaml"
+const SystemPath = "/etc/getaload/config.yaml"
 
 func DefaultPath() string {
-	if p := os.Getenv("DMN_CONFIG"); p != "" {
+	if p := os.Getenv("GETALOAD_CONFIG"); p != "" {
 		return p
 	}
-	if _, err := os.Stat(SystemPath); err == nil { // installed by install.sh: `sudo dmn ...` must act on it
+	if _, err := os.Stat(SystemPath); err == nil { // installed by install.sh: `sudo getaload ...` must act on it
 		return SystemPath
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		dir = "."
 	}
-	return filepath.Join(dir, "dmn", "config.yaml")
+	return filepath.Join(dir, "getaload", "config.yaml")
 }
 
 func defaults() map[string]any {
@@ -117,8 +117,8 @@ func defaults() map[string]any {
 		"server.httplisten": ":80",
 		"updates.tools":     "auto",
 		"updates.server":    "notify",
-		"paths.data":        filepath.Join(home, ".local", "share", "dmn"),
-		"paths.downloads":   filepath.Join(home, "Downloads", "dmn"),
+		"paths.data":        filepath.Join(home, ".local", "share", "getaload"),
+		"paths.downloads":   filepath.Join(home, "Downloads", "getaload"),
 	}
 }
 
@@ -131,8 +131,8 @@ func Load(path string, flags *pflag.FlagSet) (*koanf.Koanf, *Config, error) {
 	if err := k.Load(file.Provider(path), yaml.Parser()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, fmt.Errorf("config %s: %w", path, err)
 	}
-	if err := k.Load(env.Provider("DMN_", ".", func(s string) string {
-		return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, "DMN_")), "_", ".")
+	if err := k.Load(env.Provider("GETALOAD_", ".", func(s string) string {
+		return strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(s, "GETALOAD_")), "_", ".")
 	}), nil); err != nil {
 		return nil, nil, err
 	}
@@ -185,7 +185,7 @@ func Set(path, key string, value any) error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	// Keep the owner: `sudo dmn pair` must not turn the service's config into a root-only file.
+	// Keep the owner: `sudo getaload pair` must not turn the service's config into a root-only file.
 	if fi, err := os.Stat(path); err == nil {
 		if st, ok := fi.Sys().(*syscall.Stat_t); ok && os.Geteuid() == 0 {
 			os.Chown(tmp, int(st.Uid), int(st.Gid))

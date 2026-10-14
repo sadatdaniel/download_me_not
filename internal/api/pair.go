@@ -10,7 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"rsc.io/qr"
 
-	"github.com/sadatdaniel/download_me_not/internal/config"
+	"github.com/sadatdaniel/getaload/internal/config"
 )
 
 // AddToken creates a token, stores only its hash in the config file, and returns it. A token with
@@ -25,7 +25,7 @@ func AddToken(cfgPath, name, scope string) (string, error) {
 	}
 	b := make([]byte, 32)
 	rand.Read(b)
-	tok := "dmn_" + base64.RawURLEncoding.EncodeToString(b)
+	tok := "getaload_" + base64.RawURLEncoding.EncodeToString(b)
 	toks := []map[string]any{}
 	for _, t := range cfg.Auth.Tokens {
 		if t.Name != name {
@@ -43,16 +43,16 @@ func PairPayload(serverURL, token, fingerprint string) string {
 	if fingerprint != "" {
 		v.Set("fp", fingerprint)
 	}
-	return "dmn://pair?" + v.Encode()
+	return "getaload://pair?" + v.Encode()
 }
 
 type pairOut struct {
-	Payload     string `json:"payload" doc:"dmn://pair link for the app (contains the new token: shown once)"`
+	Payload     string `json:"payload" doc:"getaload://pair link for the app (contains the new token: shown once)"`
 	QR          string `json:"qr" doc:"the payload as a PNG data: URL"`
 	Fingerprint string `json:"fingerprint,omitempty" doc:"SHA-256 of the self-signed certificate"`
 }
 
-// pairRoutes lets the owner pair a phone from the web panel, without SSH (same as `dmn pair`).
+// pairRoutes lets the owner pair a phone from the web panel, without SSH (same as `getaload pair`).
 func (s *server) pairRoutes(api huma.API) {
 	huma.Register(api, op("pair", "POST", "/v1/pair", "admin", "Create a device token and its pairing QR code"),
 		func(ctx context.Context, in *struct {

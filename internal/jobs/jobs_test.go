@@ -25,11 +25,11 @@ import (
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
 
-	"github.com/sadatdaniel/download_me_not/internal/cookies"
-	"github.com/sadatdaniel/download_me_not/internal/engine"
-	"github.com/sadatdaniel/download_me_not/internal/rclone"
-	"github.com/sadatdaniel/download_me_not/internal/store"
-	"github.com/sadatdaniel/download_me_not/internal/video"
+	"github.com/sadatdaniel/getaload/internal/cookies"
+	"github.com/sadatdaniel/getaload/internal/engine"
+	"github.com/sadatdaniel/getaload/internal/rclone"
+	"github.com/sadatdaniel/getaload/internal/store"
+	"github.com/sadatdaniel/getaload/internal/video"
 )
 
 func payload(n int, seed byte) []byte {
@@ -551,7 +551,7 @@ func TestDriveCopyPipeline(t *testing.T) {
 	defer db.Close()
 	m := New(Options{DB: db, Downloads: dir, Client: http.DefaultClient, Tick: 20 * time.Millisecond,
 		Destination: func(name, user string) (*Dest, error) {
-			return &Dest{Runner: rclone.Runner{Bin: bin}, Remote: rclone.Remote{Name: "gd", Params: map[string]string{"type": "local"}}, Folder: cloud + "/dmn"}, nil
+			return &Dest{Runner: rclone.Runner{Bin: bin}, Remote: rclone.Remote{Name: "gd", Params: map[string]string{"type": "local"}}, Folder: cloud + "/getaload"}, nil
 		}})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error)
@@ -574,7 +574,7 @@ func TestDriveCopyPipeline(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	waitState(t, m, cp.ID, "done", 15*time.Second)
-	if b, _ := os.ReadFile(filepath.Join(cloud, "dmn", "report.pdf")); !bytes.Equal(b, data) {
+	if b, _ := os.ReadFile(filepath.Join(cloud, "getaload", "report.pdf")); !bytes.Equal(b, data) {
 		t.Fatal("not uploaded")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "report.pdf")); !os.IsNotExist(err) {

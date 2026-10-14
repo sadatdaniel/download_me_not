@@ -130,11 +130,11 @@ func TestAddonClient(t *testing.T) {
 	}
 }
 
-// Opt-in check that real manifests and catalogs parse (DMN_LIVE_ADDONS=1, needs internet): Stremio's official
+// Opt-in check that real manifests and catalogs parse (GETALOAD_LIVE_ADDONS=1, needs internet): Stremio's official
 // metadata add-on (Cinemeta) and the official OpenSubtitles add-on. JSON only: no streams, no media (rule 7).
 func TestLiveAddons(t *testing.T) {
-	if os.Getenv("DMN_LIVE_ADDONS") != "1" {
-		t.Skip("set DMN_LIVE_ADDONS=1 to check real add-ons")
+	if os.Getenv("GETALOAD_LIVE_ADDONS") != "1" {
+		t.Skip("set GETALOAD_LIVE_ADDONS=1 to check real add-ons")
 	}
 	c := &Client{HTTP: http.DefaultClient}
 	ctx := context.Background()

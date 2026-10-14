@@ -6,7 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/sadatdaniel/download_me_not/internal/fsapi"
+	"github.com/sadatdaniel/getaload/internal/fsapi"
 )
 
 type cleanupOut struct {

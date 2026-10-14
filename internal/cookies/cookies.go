@@ -280,7 +280,7 @@ func (s *Store) TempFile(rawURL string) (path string, userAgent string, cleanup 
 	if len(cs) == 0 {
 		return "", ua, func() {}, nil
 	}
-	dir, err := os.MkdirTemp("", "dmn-cookies-")
+	dir, err := os.MkdirTemp("", "getaload-cookies-")
 	if err != nil {
 		return "", "", func() {}, err
 	}

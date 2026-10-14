@@ -1,4 +1,4 @@
-# download_me_not
+# getaload
 
 A self-hosted download server: send it a web link, a video page, a magnet link or a .torrent, it
 downloads on your server, and you browse, stream or copy the results to Google Drive from the web
@@ -18,12 +18,12 @@ See **[docs/deploy.md](docs/deploy.md)** for the full guide (Docker, domains, ev
 **1. Install** on a Linux server (systemd, x86-64 / arm64 / armv7):
 
 ```sh
-curl -fsSL https://github.com/sadatdaniel/download_me_not/releases/latest/download/install.sh | sudo sh
+curl -fsSL https://github.com/sadatdaniel/getaload/releases/latest/download/install.sh | sudo sh
 ```
 
 The installer asks for **your name and a 4-digit PIN**: you become the first user (the owner). At the
 end it prints how to connect: the address, the certificate fingerprint and the ports to open.
-`sudo dmn connect` shows that again at any time.
+`sudo getaload connect` shows that again at any time.
 
 **2. Open the ports**: TCP **8080** (app and web panel) and TCP+UDP **42069** (torrents, optional but
 faster), in the server's firewall *and*, on a cloud VM, in the provider's console. On **Oracle Cloud**:
@@ -39,12 +39,12 @@ certificate after comparing its fingerprint, tap your name and enter your PIN. T
 signed in. Use the public IP: a `10.x` or `192.168.x` address only works on the same network.
 
 **4. Add the others**: in the app, Settings, **Users**, Add a user (name + PIN), or on the server
-`sudo dmn user add NAME`. Everyone sees only their own downloads, files and watch progress.
+`sudo getaload user add NAME`. Everyone sees only their own downloads, files and watch progress.
 
 Forgot a PIN? The owner resets it in the app (Settings, Users), or on the server:
-`sudo dmn user pin NAME`. Five wrong PINs lock a name for a minute, then longer.
+`sudo getaload user pin NAME`. Five wrong PINs lock a name for a minute, then longer.
 
-Docker: `docker compose up -d`, then `docker compose exec dmn dmn user add NAME` (see the guide).
+Docker: `docker compose up -d`, then `docker compose exec getaload getaload user add NAME` (see the guide).
 
 ## For contributors and agents
 

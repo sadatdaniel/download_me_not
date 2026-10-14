@@ -1,14 +1,14 @@
 # Handoff prompt
 
 Paste this into a new agent session started in the repo root
-(`C:\Users\sadat\Documents\Web projects\download_me_not`):
+(`C:\Users\sadat\Documents\Web projects\getaload`):
 
 ---
 
-You are continuing work on `download_me_not`, a self-hosted download server in Go (web downloads, video sites
+You are continuing work on `getaload`, a self-hosted download server in Go (web downloads, video sites
 via yt-dlp, torrents, folder/streaming API, Google Drive copy, Stremio add-ons, web panel, CLI) and its Flutter
-app. Server repo (public): https://github.com/sadatdaniel/download_me_not. App repo (private):
-sadatdaniel/download_me_not_app, checked out next to this one in `..\download_me_not_app`.
+app. Server repo (public): https://github.com/sadatdaniel/getaload. App repo (private):
+sadatdaniel/getaload_app, checked out next to this one in `..\getaload_app`.
 
 1. Read `AGENTS.md` (rules, commands, layout, releasing) and follow it strictly: smallest complete change,
    pure Go / no cgo, offline and legal testing only (rule 7: no public torrent swarms, trackers or DHT, no

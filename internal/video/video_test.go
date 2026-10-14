@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sadatdaniel/download_me_not/internal/netguard"
+	"github.com/sadatdaniel/getaload/internal/netguard"
 )
 
 func fixture(t *testing.T) (Runner, string) {

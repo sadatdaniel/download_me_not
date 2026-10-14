@@ -64,7 +64,7 @@ func (r Runner) Copy(ctx context.Context, rem Remote, src, dst string, move bool
 	if err != nil {
 		return "", err
 	}
-	tmp, err := os.MkdirTemp("", "dmn-rclone-")
+	tmp, err := os.MkdirTemp("", "getaload-rclone-")
 	if err != nil {
 		return "", err
 	}

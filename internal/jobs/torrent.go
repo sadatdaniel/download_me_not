@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sadatdaniel/download_me_not/internal/engine"
-	"github.com/sadatdaniel/download_me_not/internal/extract"
-	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/getaload/internal/engine"
+	"github.com/sadatdaniel/getaload/internal/extract"
+	"github.com/sadatdaniel/getaload/internal/store"
 )
 
 // torrentOf returns the running torrent of a job.

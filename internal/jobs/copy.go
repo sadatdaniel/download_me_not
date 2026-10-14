@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sadatdaniel/download_me_not/internal/rclone"
-	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/getaload/internal/rclone"
+	"github.com/sadatdaniel/getaload/internal/store"
 )
 
 // Dest is a configured cloud destination: the rclone remote plus where copies go.

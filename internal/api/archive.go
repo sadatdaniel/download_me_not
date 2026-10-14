@@ -13,8 +13,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/sadatdaniel/download_me_not/internal/extract"
-	"github.com/sadatdaniel/download_me_not/internal/fsapi"
+	"github.com/sadatdaniel/getaload/internal/extract"
+	"github.com/sadatdaniel/getaload/internal/fsapi"
 )
 
 // Archives open like folders: list one level, stream one file. Nothing is unpacked on disk.

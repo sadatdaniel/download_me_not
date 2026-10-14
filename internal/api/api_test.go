@@ -17,15 +17,15 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/sadatdaniel/download_me_not/internal/addons"
-	"github.com/sadatdaniel/download_me_not/internal/config"
-	"github.com/sadatdaniel/download_me_not/internal/cookies"
-	"github.com/sadatdaniel/download_me_not/internal/fsapi"
-	"github.com/sadatdaniel/download_me_not/internal/jobs"
-	"github.com/sadatdaniel/download_me_not/internal/limits"
-	"github.com/sadatdaniel/download_me_not/internal/provider"
-	"github.com/sadatdaniel/download_me_not/internal/secret"
-	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/getaload/internal/addons"
+	"github.com/sadatdaniel/getaload/internal/config"
+	"github.com/sadatdaniel/getaload/internal/cookies"
+	"github.com/sadatdaniel/getaload/internal/fsapi"
+	"github.com/sadatdaniel/getaload/internal/jobs"
+	"github.com/sadatdaniel/getaload/internal/limits"
+	"github.com/sadatdaniel/getaload/internal/provider"
+	"github.com/sadatdaniel/getaload/internal/secret"
+	"github.com/sadatdaniel/getaload/internal/store"
 )
 
 func newTestServer(t *testing.T) (*httptest.Server, string) {
@@ -47,7 +47,7 @@ func newTestServerJobs(t *testing.T) (*httptest.Server, string, *jobs.Manager) {
 		{Name: "w", Hash: HashToken("write-tok"), Scope: "write"},
 		{Name: "a", Hash: HashToken("admin-tok"), Scope: "admin"},
 	}
-	db, err := store.Open(filepath.Join(dir, "dmn.db"))
+	db, err := store.Open(filepath.Join(dir, "getaload.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

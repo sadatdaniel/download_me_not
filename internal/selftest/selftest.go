@@ -1,6 +1,6 @@
 // Package selftest proves an install works end to end using only local fixtures: an in-process
 // HTTP server and a loopback torrent swarm with DHT off. Nothing touches the internet
-// (AGENTS.md rule 7). Used by `dmn doctor --selftest`, and later as the post-update health check.
+// (AGENTS.md rule 7). Used by `getaload doctor --selftest`, and later as the post-update health check.
 package selftest
 
 import (
@@ -20,9 +20,9 @@ import (
 
 	"github.com/anacrolix/torrent/bencode"
 
-	"github.com/sadatdaniel/download_me_not/internal/engine"
-	"github.com/sadatdaniel/download_me_not/internal/fsapi"
-	"github.com/sadatdaniel/download_me_not/internal/httpdl"
+	"github.com/sadatdaniel/getaload/internal/engine"
+	"github.com/sadatdaniel/getaload/internal/fsapi"
+	"github.com/sadatdaniel/getaload/internal/httpdl"
 )
 
 type Check struct {
@@ -34,7 +34,7 @@ type Check struct {
 
 // Run executes every check in a temporary folder and removes it afterwards.
 func Run(ctx context.Context) []Check {
-	dir, err := os.MkdirTemp("", "dmn-selftest-")
+	dir, err := os.MkdirTemp("", "getaload-selftest-")
 	if err != nil {
 		return []Check{{Name: "tempdir", Detail: err.Error()}}
 	}

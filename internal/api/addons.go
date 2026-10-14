@@ -14,10 +14,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/sadatdaniel/download_me_not/internal/addons"
-	"github.com/sadatdaniel/download_me_not/internal/config"
-	"github.com/sadatdaniel/download_me_not/internal/jobs"
-	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/getaload/internal/addons"
+	"github.com/sadatdaniel/getaload/internal/config"
+	"github.com/sadatdaniel/getaload/internal/jobs"
+	"github.com/sadatdaniel/getaload/internal/store"
 )
 
 // Stremio add-ons (experimental). The server is the add-on client: it fetches through the SSRF guard, caches,

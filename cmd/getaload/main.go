@@ -1,4 +1,4 @@
-// Command dmn is the server and its CLI in one static binary. ("dmn" is a placeholder name.)
+// Command getaload is the server and its CLI in one static binary. ("getaload" is a placeholder name.)
 package main
 
 import (
@@ -35,32 +35,32 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	"github.com/spf13/cobra"
 
-	"github.com/sadatdaniel/download_me_not/internal/acme"
-	"github.com/sadatdaniel/download_me_not/internal/addons"
-	"github.com/sadatdaniel/download_me_not/internal/api"
-	"github.com/sadatdaniel/download_me_not/internal/config"
-	"github.com/sadatdaniel/download_me_not/internal/cookies"
-	"github.com/sadatdaniel/download_me_not/internal/engine"
-	"github.com/sadatdaniel/download_me_not/internal/fsapi"
-	"github.com/sadatdaniel/download_me_not/internal/gdrive"
-	"github.com/sadatdaniel/download_me_not/internal/jobs"
-	"github.com/sadatdaniel/download_me_not/internal/limits"
-	"github.com/sadatdaniel/download_me_not/internal/netguard"
-	"github.com/sadatdaniel/download_me_not/internal/provider"
-	"github.com/sadatdaniel/download_me_not/internal/rclone"
-	"github.com/sadatdaniel/download_me_not/internal/secret"
-	"github.com/sadatdaniel/download_me_not/internal/selftest"
-	"github.com/sadatdaniel/download_me_not/internal/store"
-	"github.com/sadatdaniel/download_me_not/internal/tlsutil"
-	"github.com/sadatdaniel/download_me_not/internal/tools"
-	"github.com/sadatdaniel/download_me_not/internal/update"
-	"github.com/sadatdaniel/download_me_not/internal/video"
+	"github.com/sadatdaniel/getaload/internal/acme"
+	"github.com/sadatdaniel/getaload/internal/addons"
+	"github.com/sadatdaniel/getaload/internal/api"
+	"github.com/sadatdaniel/getaload/internal/config"
+	"github.com/sadatdaniel/getaload/internal/cookies"
+	"github.com/sadatdaniel/getaload/internal/engine"
+	"github.com/sadatdaniel/getaload/internal/fsapi"
+	"github.com/sadatdaniel/getaload/internal/gdrive"
+	"github.com/sadatdaniel/getaload/internal/jobs"
+	"github.com/sadatdaniel/getaload/internal/limits"
+	"github.com/sadatdaniel/getaload/internal/netguard"
+	"github.com/sadatdaniel/getaload/internal/provider"
+	"github.com/sadatdaniel/getaload/internal/rclone"
+	"github.com/sadatdaniel/getaload/internal/secret"
+	"github.com/sadatdaniel/getaload/internal/selftest"
+	"github.com/sadatdaniel/getaload/internal/store"
+	"github.com/sadatdaniel/getaload/internal/tlsutil"
+	"github.com/sadatdaniel/getaload/internal/tools"
+	"github.com/sadatdaniel/getaload/internal/update"
+	"github.com/sadatdaniel/getaload/internal/video"
 )
 
 var version = "dev" // set by -ldflags "-X main.version=..."
 
 // updateRepo is where signed releases are published.
-var updateRepo = "sadatdaniel/download_me_not"
+var updateRepo = "sadatdaniel/getaload"
 
 var (
 	cfgPath  string
@@ -71,13 +71,13 @@ var (
 )
 
 func main() {
-	root := &cobra.Command{Use: "dmn", Short: "Self-hosted download server and CLI", SilenceUsage: true}
+	root := &cobra.Command{Use: "getaload", Short: "Self-hosted download server and CLI", SilenceUsage: true}
 	pf := root.PersistentFlags()
-	pf.StringVar(&cfgPath, "config", config.DefaultPath(), "config file (env DMN_CONFIG)")
+	pf.StringVar(&cfgPath, "config", config.DefaultPath(), "config file (env GETALOAD_CONFIG)")
 	pf.BoolVar(&jsonOut, "json", false, "JSON output for scripting")
-	pf.StringVar(&srvURL, "url", envOr("DMN_URL", "http://127.0.0.1:8080"), "server URL (env DMN_URL)")
-	pf.StringVar(&srvToken, "token", os.Getenv("DMN_TOKEN"), "API token (env DMN_TOKEN)")
-	pf.StringVar(&srvFP, "fingerprint", os.Getenv("DMN_FINGERPRINT"), "pin a self-signed server certificate by SHA-256 (env DMN_FINGERPRINT; shown by `dmn pair`)")
+	pf.StringVar(&srvURL, "url", envOr("GETALOAD_URL", "http://127.0.0.1:8080"), "server URL (env GETALOAD_URL)")
+	pf.StringVar(&srvToken, "token", os.Getenv("GETALOAD_TOKEN"), "API token (env GETALOAD_TOKEN)")
+	pf.StringVar(&srvFP, "fingerprint", os.Getenv("GETALOAD_FINGERPRINT"), "pin a self-signed server certificate by SHA-256 (env GETALOAD_FINGERPRINT; shown by `getaload pair`)")
 
 	root.AddCommand(serveCmd(), setupCmd(), configCmd(), doctorCmd(), versionCmd(), providersCmd(),
 		lsCmd(), statCmd(), mkdirCmd(), mvCmd(), cpCmd(), zipCmd(), rmCmd(), watchCmd(), addCmd(), modeCmd(), cancelCmd(),
@@ -127,10 +127,10 @@ func serveCmd() *cobra.Command {
 		}
 		// Safe by default (scope §4.5): without a token, only loopback is allowed.
 		if len(cfg.Auth.Tokens) == 0 && !loopback(cfg.Server.Listen) {
-			return fmt.Errorf("no API token yet: run `dmn setup` first, or listen on 127.0.0.1")
+			return fmt.Errorf("no API token yet: run `getaload setup` first, or listen on 127.0.0.1")
 		}
 		if cfg.Auth.Signkey == "" {
-			return fmt.Errorf("no signing key: run `dmn setup` first")
+			return fmt.Errorf("no signing key: run `getaload setup` first")
 		}
 		if err := os.MkdirAll(cfg.Paths.Data, 0o700); err != nil {
 			return err
@@ -143,7 +143,7 @@ func serveCmd() *cobra.Command {
 		} else if rb {
 			return errors.New("the updated version did not start correctly; the previous version was restored and will start next")
 		}
-		db, err := store.Open(filepath.Join(cfg.Paths.Data, "dmn.db"))
+		db, err := store.Open(filepath.Join(cfg.Paths.Data, "getaload.db"))
 		if err != nil {
 			return err
 		}
@@ -240,7 +240,7 @@ func serveCmd() *cobra.Command {
 			srv.Shutdown(sctx)
 		}()
 		defer func() { stop(); <-jobsDone }() // runners save their resume state before the DB closes
-		fmt.Fprintf(os.Stderr, "dmn %s listening on %s (tls: %s), downloads in %s\n", version, cfg.Server.Listen, mode, cfg.Paths.Downloads)
+		fmt.Fprintf(os.Stderr, "getaload %s listening on %s (tls: %s), downloads in %s\n", version, cfg.Server.Listen, mode, cfg.Paths.Downloads)
 		switch mode {
 		case "self-signed":
 			srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
@@ -482,7 +482,7 @@ func setupCmd() *cobra.Command {
 			return err
 		}
 		return show(map[string]string{"config": cfgPath, "name": *name, "scope": *scope, "token": tok}, func() {
-			fmt.Printf("Config: %s\nToken %q (%s), shown once:\n\n  %s\n\nUse it with: export DMN_TOKEN=%s\n", cfgPath, *name, *scope, tok, tok)
+			fmt.Printf("Config: %s\nToken %q (%s), shown once:\n\n  %s\n\nUse it with: export GETALOAD_TOKEN=%s\n", cfgPath, *name, *scope, tok, tok)
 		})
 	}
 	return c
@@ -503,7 +503,7 @@ func configCmd() *cobra.Command {
 	}}
 	set := &cobra.Command{Use: "set <key> <value>", Args: cobra.ExactArgs(2), RunE: func(_ *cobra.Command, a []string) error {
 		if strings.HasPrefix(a[0], "auth.") {
-			return fmt.Errorf("auth settings are managed by `dmn setup`")
+			return fmt.Errorf("auth settings are managed by `getaload setup`")
 		}
 		var v any = a[1]
 		if a[1] == "true" || a[1] == "false" {
@@ -763,7 +763,7 @@ func addCmd() *cobra.Command {
 	headers := c.Flags().StringArrayP("header", "H", nil, `request header, e.g. -H "Cookie: a=b" (repeatable)`)
 	seed := c.Flags().String("seed", "", "torrents: stop, ratio:1.5, time:60 (minutes) or forever")
 	prio := c.Flags().Int("priority", 0, "queue priority: higher starts first")
-	format := c.Flags().StringP("format", "f", "", "video pages: preset (best, 1080p, 720p, 480p, m4a, opus, mp3) or a format id from `dmn formats`")
+	format := c.Flags().StringP("format", "f", "", "video pages: preset (best, 1080p, 720p, 480p, m4a, opus, mp3) or a format id from `getaload formats`")
 	unpack := c.Flags().Bool("extract", false, "unpack archives when done (default from jobs.extract)")
 	delArc := c.Flags().Bool("delete-archive", false, "with --extract: delete the archive after unpacking")
 	c.RunE = func(_ *cobra.Command, a []string) error {
@@ -1168,7 +1168,7 @@ func formatsCmd() *cobra.Command {
 				for _, p := range res.Presets {
 					fmt.Print(p.Name, " ")
 				}
-				fmt.Println("\n\nuse one with: dmn add --format <preset or id> <url>")
+				fmt.Println("\n\nuse one with: getaload add --format <preset or id> <url>")
 				rows := [][]string{{"ID", "EXT", "RESOLUTION", "FPS", "VIDEO", "AUDIO", "SIZE"}}
 				for _, f := range res.Video.Formats {
 					rows = append(rows, []string{f.ID, f.Ext, f.Resolution, fmt.Sprint(f.FPS), f.VCodec, f.ACodec, sizeStr(f.Size)})
@@ -1343,7 +1343,7 @@ func destinations(cfg *config.Config, reg *provider.Registry, box *secret.Box, o
 		}
 		folder := str("folder")
 		if folder == "" {
-			folder = "dmn"
+			folder = "getaload"
 		}
 		return &jobs.Dest{
 			Runner:    rclone.Runner{Bin: bin},
@@ -1538,7 +1538,7 @@ func updateCmd() *cobra.Command {
 		}
 		return show(ch, func() {
 			if ch.Available {
-				fmt.Printf("update available: %s -> %s (dmn update apply)\n", ch.Current, ch.Latest)
+				fmt.Printf("update available: %s -> %s (getaload update apply)\n", ch.Current, ch.Latest)
 			} else {
 				fmt.Printf("up to date (%s)\n", ch.Current)
 			}
@@ -1559,7 +1559,7 @@ func updateCmd() *cobra.Command {
 		if err := (update.Updater{DataDir: cfg.Paths.Data}).Rollback(); err != nil {
 			return err
 		}
-		fmt.Println("previous version restored; restart the service (systemctl restart dmn)")
+		fmt.Println("previous version restored; restart the service (systemctl restart getaload)")
 		return nil
 	}})
 	return c
@@ -1571,7 +1571,7 @@ func uninstallCmd() *cobra.Command {
 	delDL := c.Flags().Bool("delete-downloads", false, "also delete the download folder (asks you to type its path)")
 	c.RunE = func(*cobra.Command, []string) error {
 		if os.Geteuid() != 0 {
-			return errors.New("run as root (sudo dmn uninstall)")
+			return errors.New("run as root (sudo getaload uninstall)")
 		}
 		_, cfg, err := config.Load(cfgPath, nil)
 		if err != nil {
@@ -1586,12 +1586,12 @@ func uninstallCmd() *cobra.Command {
 			}
 		}
 		if _, err := os.Stat("/run/systemd/system"); err == nil {
-			exec.Command("systemctl", "disable", "--now", "dmn").Run()
-			os.Remove("/etc/systemd/system/dmn.service")
+			exec.Command("systemctl", "disable", "--now", "getaload").Run()
+			os.Remove("/etc/systemd/system/getaload.service")
 			exec.Command("systemctl", "daemon-reload").Run()
 		}
-		os.Remove("/usr/local/bin/dmn")
-		os.RemoveAll("/opt/dmn")
+		os.Remove("/usr/local/bin/getaload")
+		os.RemoveAll("/opt/getaload")
 		if *purge {
 			os.RemoveAll(filepath.Dir(cfgPath))
 			os.RemoveAll(cfg.Paths.Data)

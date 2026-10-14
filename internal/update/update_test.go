@@ -13,7 +13,7 @@ import (
 // The release that installs but never gets healthy: first start counts, second start rolls back.
 func TestConfirmAfterBoot(t *testing.T) {
 	dir := t.TempDir()
-	exe := filepath.Join(dir, "dmn")
+	exe := filepath.Join(dir, "getaload")
 	os.WriteFile(exe, []byte("new"), 0o755)
 	os.WriteFile(exe+".prev", []byte("old"), 0o755)
 	u := Updater{DataDir: dir, Exe: exe}
@@ -36,7 +36,7 @@ func TestConfirmAfterBoot(t *testing.T) {
 
 func TestConfirmed(t *testing.T) {
 	dir := t.TempDir()
-	exe := filepath.Join(dir, "dmn")
+	exe := filepath.Join(dir, "getaload")
 	os.WriteFile(exe, []byte("new"), 0o755)
 	os.WriteFile(exe+".prev", []byte("old"), 0o755)
 	u := Updater{DataDir: dir, Exe: exe}
@@ -66,7 +66,7 @@ func TestOpenSSLSignatureVerifies(t *testing.T) {
 	}
 	dir := t.TempDir()
 	key, pub, sums := filepath.Join(dir, "k.pem"), filepath.Join(dir, "p.pem"), filepath.Join(dir, "checksums.txt")
-	os.WriteFile(sums, []byte("abc123  dmn_1.0.0_linux_amd64.tar.gz\n"), 0o644)
+	os.WriteFile(sums, []byte("abc123  getaload_1.0.0_linux_amd64.tar.gz\n"), 0o644)
 	for _, args := range [][]string{
 		{"ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", key},
 		{"ec", "-in", key, "-pubout", "-out", pub},

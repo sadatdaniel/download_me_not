@@ -1,4 +1,4 @@
-// download_me_not control panel. A plain client of the /v1 API (same as the Android app).
+// getaload control panel. A plain client of the /v1 API (same as the Android app).
 import { h, render } from './vendor/preact.module.js';
 import { useState, useEffect, useRef, useCallback } from './vendor/hooks.module.js';
 import htm from './vendor/htm.module.js';
@@ -7,7 +7,7 @@ const html = htm.bind(h);
 
 // ---- API ----------------------------------------------------------------------------------------
 
-const tokenKey = 'dmn.token';
+const tokenKey = 'getaload.token';
 let token = '';
 try { token = localStorage.getItem(tokenKey) || ''; } catch { /* private mode */ }
 let onUnauthorized = () => {};
@@ -107,7 +107,7 @@ function Login({ onDone }) {
   };
   if (!users) return null;
   return html`<div class="card login">
-    <h2>download_me_not</h2>
+    <h2>getaload</h2>
     <form onSubmit=${submit}>
       ${users.length ? html`
         <select value=${name} onChange=${e => setName(e.target.value)} autofocus>
@@ -116,7 +116,7 @@ function Login({ onDone }) {
         </select>
         <input type="password" inputmode="numeric" maxlength="4" placeholder="PIN" value=${t} onInput=${e => setT(e.target.value)} style="margin-top:10px" />`
       : html`
-        <p class="muted">Paste an API token. Create one on the server with <code>dmn setup</code> or <code>dmn pair</code>.</p>
+        <p class="muted">Paste an API token. Create one on the server with <code>getaload setup</code> or <code>getaload pair</code>.</p>
         <input type="password" placeholder="dmn_..." value=${t} onInput=${e => setT(e.target.value)} autofocus />`}
       <div class="row" style="margin-top:10px"><button class="primary">Sign in</button></div>
       ${err && html`<p class="error">${err}</p>`}
@@ -484,7 +484,7 @@ function App() {
   const onPlay = (src, name) => setPlayer({ src, name });
   return html`
     <header>
-      <span class="brand">download_me_not</span>
+      <span class="brand">getaload</span>
       <nav>${nav.map(([r, t]) => html`<a href=${r} class=${route === r ? 'on' : ''}>${t}</a>`)}</nav>
       <button onClick=${onUnauthorized}>Sign out</button>
     </header>

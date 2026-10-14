@@ -30,7 +30,7 @@ func TestRegistry(t *testing.T) {
 func TestSettings(t *testing.T) {
 	r := NewRegistry(map[string]Settings{"gdrive": {Settings: map[string]any{"clientSecret": "enc:v1:xxx"}}}, t.TempDir())
 	v, err := r.View("gdrive")
-	if err != nil || v["clientSecret"] != true || v["token"] != false || v["folder"] != "dmn" {
+	if err != nil || v["clientSecret"] != true || v["token"] != false || v["folder"] != "getaload" {
 		t.Fatalf("view %v %v", v, err)
 	}
 	for _, c := range []struct {

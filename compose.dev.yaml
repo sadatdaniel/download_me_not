@@ -28,6 +28,6 @@ services:
 
 volumes:
   dmn-gomod:
-    labels: { project: download_me_not }
+    labels: { project: getaload }
   dmn-gocache:
-    labels: { project: download_me_not }
+    labels: { project: getaload }

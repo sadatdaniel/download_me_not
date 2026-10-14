@@ -39,7 +39,7 @@ func SelfSigned(dir string) (tls.Certificate, error) {
 	host, _ := os.Hostname()
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: "download_me_not " + host},
+		Subject:      pkix.Name{CommonName: "getaload " + host},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().AddDate(10, 0, 0),
 		KeyUsage:     x509.KeyUsageDigitalSignature,

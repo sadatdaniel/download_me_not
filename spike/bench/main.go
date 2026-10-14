@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/sadatdaniel/download_me_not/internal/httpdl"
+	"github.com/sadatdaniel/getaload/internal/httpdl"
 )
 
 type throttled struct {

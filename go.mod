@@ -1,4 +1,4 @@
-module github.com/sadatdaniel/download_me_not
+module github.com/sadatdaniel/getaload
 
 go 1.26.9
 

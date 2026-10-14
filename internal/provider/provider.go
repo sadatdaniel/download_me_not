@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sadatdaniel/download_me_not/internal/tools"
+	"github.com/sadatdaniel/getaload/internal/tools"
 )
 
 type Kind string
@@ -92,7 +92,7 @@ var builtins = []def{
 		Schema: obj(map[string]any{
 			"clientId":     map[string]any{"type": "string", "title": "Google OAuth client ID (type: TVs and Limited Input devices)"},
 			"clientSecret": map[string]any{"type": "string", "writeOnly": true, "title": "Google OAuth client secret"},
-			"folder":       map[string]any{"type": "string", "default": "dmn", "title": "Drive folder for copies"},
+			"folder":       map[string]any{"type": "string", "default": "getaload", "title": "Drive folder for copies"},
 			"token":        map[string]any{"type": "string", "writeOnly": true, "readOnly": true, "title": "Set by Connect Google Drive"},
 		})},
 		// Each user connects their own Drive (/v1/me/drive); the provider only needs the app's Google client ID.
@@ -162,7 +162,7 @@ func (r *Registry) status(d def, enabled bool) (Status, string) {
 		}
 	}
 	if d.signin != nil && d.signin(r.settings[d.Name]) {
-		return NeedsSignin, "sign in with `dmn providers config " + d.Name + "`"
+		return NeedsSignin, "sign in with `getaload providers config " + d.Name + "`"
 	}
 	if len(soft) > 0 {
 		notes := make([]string, len(soft))
@@ -305,7 +305,7 @@ var softEffect = map[string]string{
 // missing starts installing missing tools (when the server manages them) and says what is happening.
 func (r *Registry) missing(names []string) string {
 	if r.Tools == nil || r.Tools.Inst == nil {
-		return strings.Join(names, ", ") + " not found; run `dmn doctor`"
+		return strings.Join(names, ", ") + " not found; run `getaload doctor`"
 	}
 	var parts []string
 	for _, n := range names {

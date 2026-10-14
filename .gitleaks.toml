@@ -1,0 +1,13 @@
+# gitleaks (CI): the default rules plus this server's own API tokens, which the defaults do not know.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "getaload-token"
+description = "getaload (formerly download_me_not) API token"
+regex = '''\b(?:getaload|dmn)_[A-Za-z0-9_-]{43}\b'''
+keywords = ["getaload_", "dmn_"]
+
+[allowlist]
+description = "dead tokens of throwaway install-simulation containers on a dev PC (containers removed 2026-10-14)"
+commits = ["697327e2c24a8d12eed8f62e7296ef2c089bdbb5", "49f981643ef16ff9ef6ff398ee30a4a9a693d5d4"]

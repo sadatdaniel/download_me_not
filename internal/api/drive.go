@@ -6,10 +6,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/sadatdaniel/download_me_not/internal/config"
-	"github.com/sadatdaniel/download_me_not/internal/provider"
-	"github.com/sadatdaniel/download_me_not/internal/secret"
-	"github.com/sadatdaniel/download_me_not/internal/store"
+	"github.com/sadatdaniel/getaload/internal/config"
+	"github.com/sadatdaniel/getaload/internal/provider"
+	"github.com/sadatdaniel/getaload/internal/secret"
+	"github.com/sadatdaniel/getaload/internal/store"
 )
 
 // Google Drive per user: the app's Google registration (client ID) is the server's, but each user connects their

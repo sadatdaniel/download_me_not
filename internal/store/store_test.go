@@ -8,7 +8,7 @@ import (
 )
 
 func TestOpenMigrateReopen(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "dmn.db")
+	path := filepath.Join(t.TempDir(), "getaload.db")
 	db, err := Open(path)
 	if err != nil {
 		t.Fatal(err)

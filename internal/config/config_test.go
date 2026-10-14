@@ -16,8 +16,8 @@ func TestPrecedence(t *testing.T) {
 	}
 	Set(path, "paths.data", "/file/data")
 	Set(path, "paths.downloads", "/file/dl")
-	t.Setenv("DMN_PATHS_DATA", "/env/data")
-	t.Setenv("DMN_PATHS_DOWNLOADS", "/env/dl")
+	t.Setenv("GETALOAD_PATHS_DATA", "/env/data")
+	t.Setenv("GETALOAD_PATHS_DOWNLOADS", "/env/dl")
 
 	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
 	fs.String("listen", "", "")
@@ -45,7 +45,7 @@ func TestPrecedence(t *testing.T) {
 }
 
 // As root (the dev and CI containers), writing must keep the file's owner: the service user has to
-// keep reading the config after `sudo dmn pair` or `sudo dmn setup`.
+// keep reading the config after `sudo getaload pair` or `sudo getaload setup`.
 func TestSetKeepsOwner(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("needs root")

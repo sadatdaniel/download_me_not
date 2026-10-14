@@ -7,23 +7,23 @@ RUN go mod download
 COPY . .
 ARG TARGETARCH TARGETVARIANT VERSION=dev
 RUN CGO_ENABLED=0 GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} go build -trimpath -buildvcs=false \
-    -ldflags "-s -w -X main.version=${VERSION}" -o /dmn ./cmd/dmn
+    -ldflags "-s -w -X main.version=${VERSION}" -o /getaload ./cmd/getaload
 
 # Debian, not Alpine: the deno builds need glibc.
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 1000 --home-dir /data --shell /usr/sbin/nologin dmn \
-    && mkdir -p /config /data /downloads /opt/dmn-seed && chown dmn /config /data /downloads
-COPY --from=build /dmn /usr/local/bin/dmn
-# Helper tools fetched by dmn's own verified installer (official releases, SHA-256 checked, self-test).
+    && useradd --system --uid 1000 --home-dir /data --shell /usr/sbin/nologin getaload \
+    && mkdir -p /config /data /downloads /opt/getaload-seed && chown getaload /config /data /downloads
+COPY --from=build /getaload /usr/local/bin/getaload
+# Helper tools fetched by getaload's own verified installer (official releases, SHA-256 checked, self-test).
 # deno has no armv7 build; video still works there without YouTube's JS challenges.
-RUN for t in yt-dlp rclone deno; do dmn tools install --data /opt/dmn-seed "$t" || echo "skip $t on $(uname -m)"; done
+RUN for t in yt-dlp rclone deno; do getaload tools install --data /opt/getaload-seed "$t" || echo "skip $t on $(uname -m)"; done
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-USER dmn
-ENV DMN_IMAGE=1 DMN_CONFIG=/config/config.yaml DMN_PATHS_DATA=/data DMN_PATHS_DOWNLOADS=/downloads DMN_SERVER_LISTEN=0.0.0.0:8080
+USER getaload
+ENV GETALOAD_IMAGE=1 GETALOAD_CONFIG=/config/config.yaml GETALOAD_PATHS_DATA=/data GETALOAD_PATHS_DOWNLOADS=/downloads GETALOAD_SERVER_LISTEN=0.0.0.0:8080
 VOLUME ["/config", "/data", "/downloads"]
 EXPOSE 8080 42069 42069/udp
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["dmn", "health"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["getaload", "health"]
 ENTRYPOINT ["sh", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["serve"]

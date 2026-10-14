@@ -213,7 +213,7 @@ type cached struct {
 const (
 	maxBody = 8 << 20
 	// UserAgent names this server to add-ons; some sites refuse Go's default "Go-http-client".
-	UserAgent    = "download_me_not (+https://github.com/sadatdaniel/download_me_not)"
+	UserAgent    = "getaload (+https://github.com/sadatdaniel/getaload)"
 	defaultCache = 10 * time.Minute
 )
 

@@ -18,7 +18,7 @@ Self-hosted download server (web links, video sites via yt-dlp, torrents) with a
 7. **Legal testing only. Torrent uploads of protected content are pursued in many countries.** Never join a public torrent swarm, never use public trackers, DHT, PEX, LSD or UPnP, and never fetch third-party torrents or media from this machine. Torrent tests run only in the isolated Docker swarm (`internal: true` network, no internet), using content we generate ourselves (random bytes, an ffmpeg `testsrc` video) and `.torrent` files we create locally, including v2 and hybrid ones. The same goes for HTTP and yt-dlp tests: local test servers serving our own files. If a test seems to need the public internet, stop and ask the user.
 8. A change to a decision goes in scope §17. A "verify" item that has been answered goes in scope §19.
 9. A shortcut with a known limit gets a `// ponytail: <limit, when to upgrade>` comment.
-10. The CLI name `dmn` is a **placeholder**. Keep it in one place (`cmd/dmn`, `.goreleaser.yaml`) so the rename is a single commit.
+10. The product and CLI name is `getaload` (renamed from download_me_not / `dmn` on 2026-10-14; the repo was renamed in place, so GitHub forwards old links). Dev-only Docker names below keep their `dmn-` prefix.
 
 ## Dev environment (Docker only, nothing installed on the host)
 
@@ -29,10 +29,10 @@ docker compose -f compose.dev.yaml run --rm test go vet ./...
 ```
 
 - Compose project `dmn-dev`, volumes `dmn-gomod` and `dmn-gocache`.
-- Docker resources this project created (the only ones you may remove): volumes `dmn-dev_dmn-gomod` and `dmn-dev_dmn-gocache` (compose adds the project prefix); images `golang:1.26`, `alpine:3.22`, `goreleaser/goreleaser:latest` and `dmn:local`, plus `ghcr.io/letsencrypt/pebble`, `ghcr.io/letsencrypt/pebble-challtestsrv` (ACME test), `dmn-sim:amd64` and `dmn-sim:arm64` (install simulation), volume `dmn-preview-config` (the app-web preview keeps its config and token across restarts) and `dmn-dev:latest` (Dockerfile.dev: Go, ffmpeg, aria2c, yt-dlp; rebuild with `docker compose -f compose.dev.yaml build go`). `ubuntu:24.04` existed before; use it but never remove it.
-- Server image: `docker build -t dmn:local .`, then see `compose.yaml`. The API contract is `api/openapi.json`; regenerate it with `UPDATE_OPENAPI=1` (see `internal/api`).
+- Docker resources this project created (the only ones you may remove): volumes `dmn-dev_dmn-gomod` and `dmn-dev_dmn-gocache` (compose adds the project prefix); images `golang:1.26`, `alpine:3.22`, `goreleaser/goreleaser:latest` and `getaload:local`, plus `ghcr.io/letsencrypt/pebble`, `ghcr.io/letsencrypt/pebble-challtestsrv` (ACME test), `dmn-sim:amd64` and `dmn-sim:arm64` (install simulation), volume `dmn-preview-config` (the app-web preview keeps its config and token across restarts) and `dmn-dev:latest` (Dockerfile.dev: Go, ffmpeg, aria2c, yt-dlp; rebuild with `docker compose -f compose.dev.yaml build go`). `ubuntu:24.04` existed before; use it but never remove it.
+- Server image: `docker build -t getaload:local .`, then see `compose.yaml`. The API contract is `api/openapi.json`; regenerate it with `UPDATE_OPENAPI=1` (see `internal/api`).
 - Don't call `python` on the host (it's a Store stub that hangs). Use Docker or perl.
-- Preview the web UI: `.claude/launch.json` (config `webui-preview`) builds and runs a throwaway server on http://127.0.0.1:18080 with a demo video; the API token is printed by `dmn setup` in the container log. Never add real downloads in a preview (rule 7).
+- Preview the web UI: `.claude/launch.json` (config `webui-preview`) builds and runs a throwaway server on http://127.0.0.1:18080 with a demo video; the API token is printed by `getaload setup` in the container log. Never add real downloads in a preview (rule 7).
 - Multi-user preview: config `webui-users` (http://127.0.0.1:18090, container `dmn-preview-users`) starts with demo users Demo (owner, PIN 1234) and Guest (PIN 5678). Config `app-web-users` (Flutter web on http://127.0.0.1:18093, API on 18092, container `dmn-appweb-users`) serves `../download_me_not_app/build/web_users` (build it with `flutter build web --release --wasm -o buildweb_users`) against the same demo users.
 - The host also runs unrelated containers (`a50-*`, `oci-*`, omniroute). **Never touch, prune or delete Docker resources this project didn't create.** No `docker system prune`, no `docker volume prune`.
 - The host is Windows. Line endings are forced to LF by `.gitattributes`.
@@ -43,15 +43,15 @@ docker compose -f compose.dev.yaml run --rm test go vet ./...
 docs/              scope.md (spec + decisions §17 + verified facts §19), STATUS.md (progress, next step),
                    architecture.md (breakage map, self-healing rules), engine-spike.md (torrent evidence),
                    benchmark.md (downloader vs aria2c)
-cmd/dmn/           the one binary: `serve` + CLI (cobra); unbuilt commands are stubs naming their milestone
+cmd/getaload/           the one binary: `serve` + CLI (cobra); unbuilt commands are stubs naming their milestone
 internal/api       huma /v1 API, token scopes read<write<admin, SSE, signed /v1/raw streaming
-internal/config    koanf: flags > env DMN_* > file > defaults; atomic Set
+internal/config    koanf: flags > env GETALOAD_* > file > defaults; atomic Set
 internal/store     SQLite (modernc), embedded migrations on user_version, backup before migrating
 internal/fsapi     folder API on os.Root (blocks ../symlink escape), Range, HMAC links
 internal/engine    torrent Engine interface + anacrolix implementation (spike lessons inside)
 internal/httpdl    IDM-style downloader: speed-aware work stealing, slow-connection watchdog, resume, If-Range
 internal/jobs      crash-only job manager: DB holds desired state, reconcile loop runs runners (recover per job)
-internal/selftest  offline end-to-end checks behind `dmn doctor --selftest`
+internal/selftest  offline end-to-end checks behind `getaload doctor --selftest`
 internal/webui     browser control panel (Preact + htm vendored, no build step), served at /, strict CSP
 internal/video, cookies, gdrive, rclone, acme, tlsutil, secret, extract, limits, update: one concern each
 scripts/           install.sh (signed-release installer) and test-install.sh (runs in CI)
@@ -76,7 +76,7 @@ spike/bench/       httpdl vs aria2c benchmark (docs/benchmark.md)
 
 ## Releasing
 
-- Tag `vX.Y.Z` on main and push the tag. The release workflow runs GoReleaser (linux amd64/arm64/armv7, `dmn_<version>_linux_<arch>.tar.gz`, `checksums.txt` signed with the CI secret RELEASE_SIGNING_KEY, `install.sh`, THIRD_PARTY_LICENSES.txt), then `update-e2e` updates the previous release to the new one through GitHub. Both must be green.
+- Tag `vX.Y.Z` on main and push the tag. The release workflow runs GoReleaser (linux amd64/arm64/armv7, `getaload_<version>_linux_<arch>.tar.gz`, `checksums.txt` signed with the CI secret RELEASE_SIGNING_KEY, `install.sh`, THIRD_PARTY_LICENSES.txt), then `update-e2e` updates the previous release to the new one through GitHub. Both must be green.
 - While the repo is private: `gh release download vX.Y.Z -p '*' -D dir` then `sudo sh dir/install.sh --from dir`.
 
 ## Definition of done (every session)

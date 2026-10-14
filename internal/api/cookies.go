@@ -6,7 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/sadatdaniel/download_me_not/internal/cookies"
+	"github.com/sadatdaniel/getaload/internal/cookies"
 )
 
 // Cookies are session credentials, kept per user: each user's cookies apply only to their own downloads.
