@@ -1591,6 +1591,7 @@ func uninstallCmd() *cobra.Command {
 			exec.Command("systemctl", "daemon-reload").Run()
 		}
 		os.Remove("/usr/local/bin/getaload")
+		os.Remove("/usr/local/bin/dmn") // alias left by the move from download_me_not
 		os.RemoveAll("/opt/getaload")
 		if *purge {
 			os.RemoveAll(filepath.Dir(cfgPath))

@@ -35,6 +35,7 @@ grep -q "tls: self-signed" /etc/getaload/config.yaml || fail "tls mode"
 [ "$(stat -c %U /etc/getaload/config.yaml)" = getaload ] || fail "config not owned by getaload"
 [ "$(stat -c %a /etc/getaload)" = 700 ] || fail "config dir not private"
 grep -q "How to connect" out.txt || fail "no connection steps printed"
+grep -q "installing getaload" out.txt || fail "no version line on a fresh install"
 grep -q "Token" out.txt || fail "no owner token printed"
 grep -q "added Alice (owner)" out.txt || fail "first user not added"
 ok "fresh install"
@@ -44,6 +45,7 @@ cp /etc/getaload/config.yaml before.yaml
 sh /src/scripts/install.sh --from "$W/rel" --yes > out2.txt 2>&1 || { cat out2.txt; fail "re-run"; }
 cmp -s before.yaml /etc/getaload/config.yaml || fail "re-run changed the config"
 grep -q "existing config kept" out2.txt || fail "re-run message"
+grep -q "already installed (repairing)" out2.txt || fail "no version line on a re-run"
 ok "re-run keeps config"
 
 # Server starts as the service user and answers.
@@ -77,9 +79,11 @@ O="env GETALOAD_CONFIG=/etc/dmn/config.yaml $W/getaload"
 $O config set paths.data /var/lib/dmn >/dev/null && $O config set paths.downloads /srv/dmn/downloads >/dev/null
 $O config set server.listen 0.0.0.0:9444 >/dev/null && $O setup >/dev/null && $O user add Old --pin 4321 >/dev/null
 mv /var/lib/dmn/getaload.db /var/lib/dmn/dmn.db
+mkdir -p /opt/dmn/bin && printf '#!/bin/sh\necho 0.1.14\n' > /opt/dmn/bin/dmn && chmod +x /opt/dmn/bin/dmn # the old binary
 chown -R dmn /etc/dmn /var/lib/dmn /srv/dmn
 sh /src/scripts/install.sh --from "$W/rel" --yes > out4.txt 2>&1 || { cat out4.txt; fail "install over an old download_me_not install"; }
 grep -q "moving the download_me_not install" out4.txt || fail "no migration message"
+grep -q "updating getaload 0.1.14 → " out4.txt || fail "no old-to-new version line when moving over"
 [ ! -e /etc/dmn ] && [ -f /etc/getaload/config.yaml ] || fail "config not moved"
 [ -f /var/lib/getaload/getaload.db ] && [ ! -e /var/lib/dmn ] || fail "data not moved"
 id getaload >/dev/null && ! id dmn >/dev/null 2>&1 || fail "service user not renamed"

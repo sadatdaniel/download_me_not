@@ -85,7 +85,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
 		rm -f /etc/systemd/system/getaload.service
 		systemctl daemon-reload 2>/dev/null || true
 	fi
-	rm -f /usr/local/bin/getaload
+	rm -f /usr/local/bin/getaload /usr/local/bin/dmn
 	rm -rf "$PREFIX"
 	if [ "$PURGE" -eq 1 ]; then
 		rm -rf "$CONF_DIR" "$DATA_DIR"
@@ -153,6 +153,16 @@ fi
 
 # Renamed from download_me_not ("dmn"): an old install moves over once, keeping its config, users, sign-ins and
 # downloads. Its download folder stays where it is.
+# What is installed now, for the "updating X → Y" line (an old download_me_not install is still /opt/dmn).
+OLD_VERSION=$("$PREFIX/bin/getaload" version 2>/dev/null || /opt/dmn/bin/dmn version 2>/dev/null || true)
+NEW_VERSION=$("$WORK/getaload" version 2>/dev/null || echo "?")
+if [ -z "$OLD_VERSION" ]; then
+	say "installing getaload $NEW_VERSION"
+elif [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
+	say "getaload $NEW_VERSION is already installed (repairing)"
+else
+	say "updating getaload $OLD_VERSION → $NEW_VERSION"
+fi
 MIGRATED=0
 if [ -f /etc/dmn/config.yaml ] && [ ! -e "$CONF_DIR/config.yaml" ]; then
 	say "moving the download_me_not install to getaload (config, users and downloads are kept)"
@@ -283,7 +293,7 @@ UNIT
 	if [ "$START" -eq 1 ]; then
 		systemctl enable getaload
 		systemctl restart getaload
-		say "service getaload running"
+		say "service getaload running ($NEW_VERSION)"
 	fi
 else
 	say "no systemd here: start it with: runuser -u getaload -- env GETALOAD_CONFIG=$CONF_DIR/config.yaml $PREFIX/bin/getaload serve"
@@ -292,4 +302,4 @@ fi
 if [ "$FRESH" -eq 1 ]; then
 	as_svc /usr/local/bin/getaload connect || say "open https://<this server>:$PORT in the app or a browser"
 fi
-say "done. Show the connection steps again: sudo getaload connect. Remove: the same one-liner with: | sudo sh -s -- --uninstall"
+say "done. Connection steps: sudo getaload connect   ·   Remove: sudo getaload uninstall"
