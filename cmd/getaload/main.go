@@ -120,13 +120,6 @@ func localServer() {
 	}
 }
 
-func envOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
 // show prints v as JSON with --json, otherwise calls human.
 func show(v any, human func()) error {
 	if jsonOut {
