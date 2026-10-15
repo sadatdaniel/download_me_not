@@ -206,7 +206,9 @@ func TestUsersAreSeparate(t *testing.T) {
 	if code, body := call(t, srv, "PUT", "/v1/prefs/favorites", a, `["tt1"]`); code != 204 {
 		t.Fatalf("set pref: %d %s", code, body)
 	}
-	if _, body := call(t, srv, "GET", "/v1/prefs", a, ""); !strings.Contains(body, "tt1") {
+	call(t, srv, "PUT", "/v1/prefs/w_abc", a, `{"pos":1}`)
+	// Each under its own name (an embedded key struct once saved them all under "", each overwriting the last).
+	if _, body := call(t, srv, "GET", "/v1/prefs", a, ""); !strings.Contains(body, `"favorites":["tt1"]`) || !strings.Contains(body, `"w_abc":{"pos":1}`) {
 		t.Fatalf("Alice's prefs: %s", body)
 	}
 	if _, body := call(t, srv, "GET", "/v1/prefs", b, ""); strings.Contains(body, "tt1") {

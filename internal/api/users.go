@@ -413,8 +413,10 @@ func (s *server) userRoutes(api huma.API) {
 	}
 	huma.Register(api, op("set-pref", "PUT", "/v1/prefs/{key}", "write", "Set one preference to any JSON value (all of them together at most 1 MiB)"),
 		func(ctx context.Context, in *struct {
-			prefIn
-			Body any `required:"true"`
+			// Not an embedded prefIn: huma skips unexported embedded structs, so every preference was saved under ""
+			// and each one overwrote the last (cross-device resume never found its position).
+			Key  string `path:"key" pattern:"^[A-Za-z0-9_-]{1,64}$"`
+			Body any    `required:"true"`
 		}) (*struct{}, error) {
 			me, err := s.me(ctx)
 			if err != nil {
