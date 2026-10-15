@@ -4,7 +4,7 @@ go 1.26.9
 
 require (
 	code.dny.dev/ssrf v0.3.0
-	github.com/anacrolix/dht/v2 v2.23.0
+	github.com/anacrolix/dht/v2 v2.24.0
 	github.com/anacrolix/torrent v1.61.0
 	github.com/caddyserver/certmagic v0.25.6
 	github.com/creativeprojects/go-selfupdate v1.6.0
