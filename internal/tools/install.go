@@ -2,8 +2,10 @@ package tools
 
 // Managed installs and updates of helper tools from their official GitHub releases (scope §5.8).
 // One path for all tools: download, verify SHA-256 against the project's published checksums,
-// run a self-test, keep the previous copy, then switch. A bad update never replaces a working tool,
-// and Rollback restores the previous one.
+// prove that it works (a real, offline job: yt-dlp finds a video on a local page, rclone copies a file, deno runs
+// code), keep the previous copy, then switch. A bad update never replaces a working tool, and Rollback restores
+// the previous one. Updates by themselves (Update) stay within the installed major version where versions mean
+// something (rclone, deno); yt-dlp always follows its latest release, which is what keeps sites working.
 
 import (
 	"archive/zip"
@@ -17,7 +19,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -27,15 +28,15 @@ import (
 )
 
 type source struct {
-	repo    string
-	asset   func(arch string, musl bool) string // regexp for the release asset, "" = unsupported here
-	sums    func(asset string) string           // name of the checksum asset
-	inner   string                              // binary name inside a zip; "" = the asset is the binary
-	selfArg string                              // argument for the self-test
+	repo      string
+	asset     func(arch string, musl bool) string // regexp for the release asset, "" = unsupported here
+	sums      func(asset string) string           // name of the checksum asset
+	inner     string                              // binary name inside a zip; "" = the asset is the binary
+	sameMajor bool                                // Update stays within the installed major version
 }
 
 var sources = map[string]source{
-	"yt-dlp": {repo: "yt-dlp/yt-dlp", selfArg: "--version", sums: func(string) string { return "SHA2-256SUMS" },
+	"yt-dlp": {repo: "yt-dlp/yt-dlp", sums: func(string) string { return "SHA2-256SUMS" },
 		asset: func(arch string, musl bool) string {
 			m := map[string]string{"amd64": "yt-dlp_linux", "arm64": "yt-dlp_linux_aarch64", "arm": "yt-dlp_linux_armv7l"}
 			if musl {
@@ -46,14 +47,14 @@ var sources = map[string]source{
 			}
 			return ""
 		}},
-	"rclone": {repo: "rclone/rclone", selfArg: "version", inner: "rclone", sums: func(string) string { return "SHA256SUMS" },
+	"rclone": {repo: "rclone/rclone", inner: "rclone", sameMajor: true, sums: func(string) string { return "SHA256SUMS" },
 		asset: func(arch string, _ bool) string { // static Go binary: works on glibc and musl
 			if a := map[string]string{"amd64": "amd64", "arm64": "arm64", "arm": "arm-v7"}[arch]; a != "" {
 				return `^rclone-v[0-9.]+-linux-` + a + `\.zip$`
 			}
 			return ""
 		}},
-	"deno": {repo: "denoland/deno", selfArg: "--version", inner: "deno", sums: func(a string) string { return a + ".sha256sum" },
+	"deno": {repo: "denoland/deno", inner: "deno", sameMajor: true, sums: func(a string) string { return a + ".sha256sum" },
 		asset: func(arch string, musl bool) string { // glibc builds only
 			if a := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[arch]; a != "" && !musl {
 				return `^deno-` + a + `-unknown-linux-gnu\.zip$`
@@ -69,6 +70,8 @@ type Installer struct {
 	DataDir string
 	Arch    string // default runtime.GOARCH
 	Musl    *bool  // default: detect
+
+	check func(ctx context.Context, name, exe string) error // tests replace the real work checks
 }
 
 func musl() bool {
@@ -111,9 +114,19 @@ func (in Installer) Installed(name string) string {
 	return strings.TrimSpace(string(b))
 }
 
-// Install installs or updates name to the latest release. It returns the new tag, or the current
-// one unchanged when already up to date.
+// Install installs or updates name to the latest release (any version: someone asked for it). It returns the new
+// tag, or the current one unchanged when already up to date.
 func (in Installer) Install(ctx context.Context, name string) (string, error) {
+	return in.install(ctx, name, false)
+}
+
+// Update is the daily, unattended update: like Install, but a new major version of rclone or deno waits for a
+// person (getaload tools install NAME), since it may change how the tool is used.
+func (in Installer) Update(ctx context.Context, name string) (string, error) {
+	return in.install(ctx, name, true)
+}
+
+func (in Installer) install(ctx context.Context, name string, auto bool) (string, error) {
 	src, ok := sources[name]
 	if !ok {
 		return "", fmt.Errorf("%s is not a managed tool", name)
@@ -143,6 +156,10 @@ func (in Installer) Install(ctx context.Context, name string) (string, error) {
 	}
 	if rel.Tag != "" && rel.Tag == in.Installed(name) {
 		return rel.Tag, nil
+	}
+	if old := in.Installed(name); auto && src.sameMajor && old != "" && major(old) != major(rel.Tag) {
+		return old, fmt.Errorf("%s %s is a new major version (installed: %s); it is not installed by itself: "+
+			"run `sudo getaload tools install %s` when you want it", name, rel.Tag, old, name)
 	}
 	re := regexp.MustCompile(pattern)
 	var assetName, assetURL, sumsURL string
@@ -206,10 +223,14 @@ func (in Installer) Install(ctx context.Context, name string) (string, error) {
 	if err := os.Chmod(exe, 0o755); err != nil {
 		return "", err
 	}
-	tctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	tctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	if out, err := exec.CommandContext(tctx, exe, src.selfArg).CombinedOutput(); err != nil {
-		return "", fmt.Errorf("%s %s failed its self-test (%v: %.200s); not installed", name, rel.Tag, err, out)
+	check := in.check
+	if check == nil {
+		check = works
+	}
+	if err := check(tctx, name, exe); err != nil {
+		return "", fmt.Errorf("%s %s failed its self-test (%v); not installed, the working copy stays", name, rel.Tag, err)
 	}
 	final := filepath.Join(bin, name)
 	if _, err := os.Stat(final); err == nil {

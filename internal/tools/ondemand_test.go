@@ -14,7 +14,7 @@ func TestOnDemand(t *testing.T) {
 		"yt-dlp_linux": v1, "SHA2-256SUMS": []byte(sum(v1) + "  yt-dlp_linux\n")}}
 	gh := fakeGitHub(t, map[string]*fakeRelease{"yt-dlp/yt-dlp": rel})
 	no := false
-	od := &OnDemand{Inst: &Installer{Client: gh.Client(), API: gh.URL, DataDir: t.TempDir(), Arch: "amd64", Musl: &no}}
+	od := &OnDemand{Inst: &Installer{Client: gh.Client(), API: gh.URL, DataDir: t.TempDir(), Arch: "amd64", Musl: &no, check: exitsOK}}
 	ctx := context.Background()
 
 	// Asked without waiting: the install starts and the caller hears that it is running.
@@ -32,7 +32,7 @@ func TestOnDemand(t *testing.T) {
 	// A broken release: the failure is reported, not an endless "installing".
 	rel2 := &fakeRelease{tag: "x", files: map[string][]byte{"rclone-current-linux-amd64.zip": []byte("not a zip")}}
 	gh2 := fakeGitHub(t, map[string]*fakeRelease{"rclone/rclone": rel2})
-	od2 := &OnDemand{Inst: &Installer{Client: gh2.Client(), API: gh2.URL, DataDir: t.TempDir(), Arch: "amd64", Musl: &no}}
+	od2 := &OnDemand{Inst: &Installer{Client: gh2.Client(), API: gh2.URL, DataDir: t.TempDir(), Arch: "amd64", Musl: &no, check: exitsOK}}
 	if _, err := od2.Ensure(ctx, "rclone", time.Minute); err == nil || !strings.Contains(err.Error(), "failed") {
 		t.Fatalf("want a failure, got %v", err)
 	}

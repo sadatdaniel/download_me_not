@@ -1445,7 +1445,11 @@ func maintainTools(ctx context.Context, inst *tools.Installer, reg *provider.Reg
 				_, found := tools.Find(name, inst.DataDir)
 				managed := inst.Installed(name) != ""
 				if managed || (!found && reg.Enabled(prov)) {
-					if tag, err := inst.Install(ctx, name); err != nil {
+					get := inst.Install // a first install takes the latest; updates stay within the major version
+					if managed {
+						get = inst.Update
+					}
+					if tag, err := get(ctx, name); err != nil {
 						fmt.Fprintf(os.Stderr, "tools: %s: %v\n", name, err)
 					} else if !managed {
 						fmt.Fprintf(os.Stderr, "tools: installed %s %s\n", name, tag)

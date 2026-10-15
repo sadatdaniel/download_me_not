@@ -8,7 +8,7 @@
 
 **Released in v0.2.2 (2026-10-14):** admin key (scope §17 "Users and server control": plain users; `sudo getaload admin` code traded for a key in Settings, Server control; old owner sign-ins become plain on start) and port 5623 for new installs (installer port check; CLI follows the local config; Docker keeps 8080 inside in v0.2.2; on main: the image listens on 5623 too).
 
-**On main, not released yet:** the Docker image listens on 5623 (one port number everywhere; owner decision). Next release: v0.2.3 (server only).
+**On main, not released yet:** server: Docker image on 5623; update check reuses the daily answer for an hour at most; helper-tool updates must pass a real offline job before they replace the working copy, and daily updates of rclone and deno stay within their major version; all Dependabot updates merged (release-only ones, Docker and GoReleaser actions, get proven by the next release). App: Settings as a list of topics with their own pages ("Your devices", "Server control", ...), one-tap server update, Dependabot updates (test build green). Next: app v0.2.3 + server v0.2.3.
 
 **Next action, in order:**
 0. **Owner checks in real Chrome or Firefox** (the test pane drops clicks, the first typed text after focusing a field, and blocks clipboard reads): double-clicking a folder opens it once; the PIN keeps every digit when typed right after clicking the field; Paste link fills the field.
@@ -16,7 +16,7 @@
 2. **Dependabot PRs:** review the open ones; GoReleaser action v7 and anacrolix/dht 2.24 fail CI.
 3. **Owner's README approval**, then put `docs/drafts/README.server.md` → `README.md` here and `docs/drafts/README.app.md` → getaload_app `README.md`. Owner feedback so far: product voice (like Seedr/TorBox), feature checklist with ✅, web client first among clients, free Oracle server (2 cores / 12 GB per account; the owner's is 1 core / 6 GB), Oracle ports step by step. Add a Caddy section to docs/deploy.md (`--access proxy`, Caddyfile `reverse_proxy 127.0.0.1:8080`).
 4. **Browser playback** (target latest Chrome and Firefox, servers as small as 1 core): ffmpeg remuxes MKV to fragmented MP4 on the fly and converts AC3/E-AC3/DTS audio to AAC; no video transcoding by default (only if the browser says it cannot play the codec, and an owner switch for bigger servers). Seeking restarts ffmpeg at the position. The apps keep playing originals with mpv.
-5. **Tool safety:** after a helper-tool update, a real working test (yt-dlp on a local page, rclone copy to a local folder) with automatic rollback; auto-update rclone/deno only within their major version; tool health (version, last update, problems) in Settings → Server.
+5. **Tool health in Settings → Server**: version, last update and the last update problem of each helper tool (the safety part is on main: work check before the switch, major-version guard).
 6. **Linux AppImage** of the app (GitHub Actions on Ubuntu, bundling libmpv; phone-only features hidden via `isPhone`). Uncommitted `linux/` and `windows/` folders in the app checkout come from `flutter create`; the Windows build failed on the missing ATL headers (flutter_secure_storage_windows), the Windows zip is on hold.
 7. Later: delete the old GHCR package `download_me_not` (owner's call), the dead install-sim tokens in two old commits (allowlisted in .gitleaks.toml; history scrub is the owner's call), licence choice, screenshots from a demo server, F-Droid build (SELF_UPDATE=false), WireGuard for downloads (home connection for YouTube), subtitle search.
 
@@ -132,3 +132,4 @@
 - 2026-10-14: released app v0.2.2 and server v0.2.2 (admin key, port 5623; release, update-e2e and image jobs green).
 - 2026-10-15: Docker image on 5623 too (owner decision: 5623 everywhere for new installs; existing servers keep their port).
 - 2026-10-15: owner's phone: old debug-signed 0.1.0 uninstalled (owner approved; no phone downloads), release-signed app v0.2.2 installed over adb; self-update works from here on.
+- 2026-10-15: Dependabot PRs merged in both repos (two CI failures were flaky tests: TestEngine and selftest TestRun on runners; rerun green); tool safety (work checks, major guard); settings topics; update check fix.
