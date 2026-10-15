@@ -52,6 +52,14 @@ grep -q "existing config kept" out2.txt || fail "re-run message"
 grep -q "already installed (repairing)" out2.txt || fail "no version line on a re-run"
 ok "re-run keeps config"
 
+# A re-run follows the folders in the config, not the defaults (a server moved over from dmn keeps /srv/dmn/...;
+# the old installer then locked the service out of it).
+runuser -u getaload -- env GETALOAD_CONFIG=/etc/getaload/config.yaml /opt/getaload/bin/getaload config set paths.downloads /srv/olddl
+sh /src/scripts/install.sh --from "$W/rel" --yes > out3.txt 2>&1 || { cat out3.txt; fail "re-run with own folder"; }
+[ "$(stat -c %U /srv/olddl)" = getaload ] || fail "re-run ignored the downloads folder in the config"
+runuser -u getaload -- env GETALOAD_CONFIG=/etc/getaload/config.yaml /opt/getaload/bin/getaload config set paths.downloads /srv/getaload/downloads
+ok "re-run follows the folders in the config"
+
 # Server starts as the service user and answers.
 runuser -u getaload -- env GETALOAD_CONFIG=/etc/getaload/config.yaml /opt/getaload/bin/getaload serve > serve.log 2>&1 &
 sleep 2

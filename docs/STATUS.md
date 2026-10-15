@@ -12,6 +12,8 @@
 
 **On main after v0.2.3:** the installer installs every helper tool (yt-dlp, deno, rclone) up front, and the daily check installs any that are missing whether or not their feature is on (owner request: nobody should have to sign in for tools to arrive). Tools the system already has stay the system's.
 
+**On main after v0.2.4:** fix for torrents stuck at 0 B with peers (the owner's server, 2026-10-15): re-running the installer reset the service's writable folders to the defaults while the config still pointed at /srv/dmn/downloads, so every write failed read-only and anacrolix silently stopped downloading. The installer now follows the folders in the config; a failed write fails the job with the reason. The owner's server is fixed by re-running install.sh with the release that has it.
+
 **Next action, in order:**
 0. **Owner checks in real Chrome or Firefox** (the test pane drops clicks, the first typed text after focusing a field, and blocks clipboard reads): double-clicking a folder opens it once; the PIN keeps every digit when typed right after clicking the field; Paste link fills the field.
 1. **Owner updates to v0.2.2**, then runs `sudo getaload admin` once and enters the code in the app (Settings, Server control): the update turns the owner's sign-in into a plain one. The owner's server keeps port 8080.
@@ -138,3 +140,4 @@
 - 2026-10-15: browser Back checked on the web app: it closes one page (the earlier 'reload' came from the test tool's history after several page loads in one tab), nothing to fix. Releasing app v0.2.3 and server v0.2.3.
 - 2026-10-15: installer and daily check install all helper tools up front (owner request).
 - 2026-10-15: released app v0.2.3 and server v0.2.3 (all jobs green; the Docker and GoReleaser action updates proven); app v0.2.3 installed on the owner's phone over adb. ACME test cleanup made best-effort (certmagic writes late).
+- 2026-10-15: found why the owner's torrents stayed at 0 B (read-only download folder after an installer re-run, from the server log); installer follows the config's folders; torrent write errors fail the job with the reason. Tests for both.

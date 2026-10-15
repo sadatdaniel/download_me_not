@@ -57,6 +57,7 @@ type Torrent interface {
 	Pause()
 	Resume()
 	Recheck(ctx context.Context) error
+	Err() error // why data stopped: a failed disk write (nil = fine)
 	Stats() Stats
 	Peers() []Peer
 	Pieces() []PieceRun
@@ -166,6 +167,7 @@ type engine struct {
 
 	mu       sync.Mutex
 	dirs     map[string]string                   // infohash → folder, for torrents added with AddIn
+	werr     sync.Map                            // infohash → the write error that stopped it (see wrap)
 	storages map[string]storage.ClientImplCloser // one per folder: each keeps a piece-completion database there
 }
 
@@ -323,7 +325,7 @@ func (e *engine) AddIn(b []byte, dir string) (_ Torrent, isNew bool, err error) 
 		e.dirs[t.InfoHash().HexString()] = dataDir
 		e.mu.Unlock()
 	}
-	tt := &tor{t: t, dataDir: e.dirOf(t.InfoHash().HexString()), noUDP: e.noUDPTrackers}
+	tt := e.wrap(t)
 	if tt.noUDP {
 		tt.SetTrackers(tt.Trackers()) // drops udp:// trackers in proxy mode
 	}
@@ -339,7 +341,19 @@ func (e *engine) Get(infohash string) (Torrent, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &tor{t: t, dataDir: e.dirOf(t.InfoHash().HexString()), noUDP: e.noUDPTrackers}, true
+	return e.wrap(t), true
+}
+
+// wrap is a torrent's handle. A chunk that can't be written (read-only or full disk, missing folder) stops its data
+// download and is kept for Err, so the job fails with the reason. anacrolix's default only logs it and stops
+// downloading, which looked like peers that never send.
+func (e *engine) wrap(t *torrent.Torrent) *tor {
+	ih := t.InfoHash().HexString()
+	t.SetOnWriteChunkError(func(err error) {
+		t.DisallowDataDownload()
+		e.werr.LoadOrStore(ih, err)
+	})
+	return &tor{t: t, e: e, dataDir: e.dirOf(ih), noUDP: e.noUDPTrackers}
 }
 
 func (e *engine) Port() int { return e.cl.LocalPort() }
@@ -385,6 +399,7 @@ func (e *engine) Close() error {
 
 type tor struct {
 	t       *torrent.Torrent
+	e       *engine
 	dataDir string
 	noUDP   bool
 
@@ -464,8 +479,20 @@ func (t *tor) SetFilePriority(i int, p Priority) {
 	}
 }
 
-func (t *tor) Pause()  { t.t.DisallowDataDownload() }
-func (t *tor) Resume() { t.t.AllowDataDownload() }
+func (t *tor) Pause() { t.t.DisallowDataDownload() }
+
+// Resume also forgets a write error: the job is trying again (e.g. after the folder was fixed).
+func (t *tor) Resume() {
+	t.e.werr.Delete(t.InfoHash())
+	t.t.AllowDataDownload()
+}
+
+func (t *tor) Err() error {
+	if v, ok := t.e.werr.Load(t.InfoHash()); ok {
+		return v.(error)
+	}
+	return nil
+}
 
 func (t *tor) Recheck(ctx context.Context) error { return t.t.VerifyDataContext(ctx) }
 

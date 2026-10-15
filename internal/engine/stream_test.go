@@ -242,3 +242,49 @@ func TestAddInFolder(t *testing.T) {
 		t.Fatal("Drop(true) left the file in the user's folder")
 	}
 }
+
+// A chunk that can't be written (here a folder sits where the file goes; on the owner's server it was a read-only
+// folder) shows up as Err, so the job can fail with the reason; anacrolix alone only logged it and stopped. Resume
+// forgets it for the next try.
+func TestWriteErrorIsReported(t *testing.T) {
+	sdir := t.TempDir()
+	os.WriteFile(filepath.Join(sdir, "film.bin"), bytes.Repeat([]byte("frame"), 200000), 0o644)
+	info := metainfo.Info{PieceLength: 64 << 10}
+	if err := info.BuildFromFilePath(filepath.Join(sdir, "film.bin")); err != nil {
+		t.Fatal(err)
+	}
+	ib, _ := bencode.Marshal(info)
+	var mi bytes.Buffer
+	(&metainfo.MetaInfo{InfoBytes: ib}).Write(&mi)
+	seeder := newEngine(t, sdir)
+	st, _, _ := seeder.Add(mi.Bytes())
+	if err := st.Recheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	userDir := filepath.Join(root, "users", "u1")
+	for _, blocked := range []string{"film.bin", "film.bin.part"} { // works as root too, unlike chmod
+		os.MkdirAll(filepath.Join(userDir, blocked, "x"), 0o755)
+	}
+	leecher := newEngine(t, root)
+	lt, _, err := leecher.AddIn(mi.Bytes(), userDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lt.(*tor).t.AddClientPeer(seeder.cl)
+	lt.Start()
+	deadline := time.Now().Add(20 * time.Second)
+	for lt.Err() == nil && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if lt.Err() == nil {
+		t.Fatalf("no write error reported: %+v", lt.Stats())
+	}
+	if again, _ := leecher.Get(lt.InfoHash()); again.Err() == nil {
+		t.Fatal("a new handle (Get) must see the error too")
+	}
+	lt.Resume()
+	if lt.Err() != nil {
+		t.Fatal("Resume must forget the error")
+	}
+}

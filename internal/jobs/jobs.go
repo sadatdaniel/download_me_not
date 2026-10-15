@@ -767,6 +767,10 @@ func (m *Manager) runTorrent(ctx context.Context, r *runner, j store.Job) error 
 			return ctx.Err()
 		case <-tick.C:
 			store.SetJob(m.o.DB, j.ID, map[string]any{"done": t.Stats().Completed})
+			if err := t.Err(); err != nil { // e.g. a read-only or full download folder: say so instead of stalling
+				t.Pause()
+				return fmt.Errorf("can't save the download (resume after fixing it): %w", err)
+			}
 			if cur, err := m.get(j.ID); err == nil && cur.Mode == "stream" { // the mode can change while it runs
 				t.StreamWindow(largest(t.Files()), streamWindow)
 			}

@@ -199,6 +199,14 @@ if [ -f /etc/dmn/config.yaml ] && [ ! -e "$CONF_DIR/config.yaml" ]; then
 	MIGRATED=1
 fi
 
+# An existing install keeps its folders: the service may only write where its config points. (Re-runs with the
+# default folder names once locked a server moved over from dmn out of its own downloads folder: read-only.)
+if [ -f "$CONF_DIR/config.yaml" ]; then
+	cfg_path() { awk -v k="$1" '/^paths:/{p=1;next} p&&/^[^ ]/{p=0} p&&$1==k":"{print $2}' "$CONF_DIR/config.yaml" | tr -d '"'; }
+	d=$(cfg_path data) && [ -z "$d" ] || DATA_DIR=$d
+	d=$(cfg_path downloads) && [ -z "$d" ] || DL_DIR=$d
+fi
+
 if ! id getaload >/dev/null 2>&1; then
 	say "creating system user getaload"
 	if command -v useradd >/dev/null 2>&1; then
