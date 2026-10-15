@@ -6,9 +6,9 @@
 
 **Released in v0.2.1 (2026-10-14, fourth conversation):** the full Flutter web client served by the server at `/` (light panel at `/lite/`; cross-origin isolated so it renders with threads; dev builds never cached), web fixes (double-click opens a folder once, no Future.then error after a 401, the downloads list stops polling after a 401, phone-only player settings hidden on the web), security audit fixes (CSP sandbox on every file route and `dl=1` downloads; locked config writes; PIN lock overflow and parallel guesses; speed limits owner-only; one connection pool in the yt-dlp guard proxy), QR pairing removed (connect by address + name + PIN; three dependencies and the camera permission gone), Paste link button instead of watching the clipboard, build tools pinned (actions by SHA, GoReleaser v2.18.3, base images by digest; Dependabot in both repos). README drafts in `docs/drafts/` (uncommitted, owner reviewing).
 
-**Released in v0.2.2 (2026-10-14):** admin key (scope §17 "Users and server control": plain users; `sudo getaload admin` code traded for a key in Settings, Server control; old owner sign-ins become plain on start) and port 5623 for new installs (installer port check; CLI follows the local config; Docker keeps 8080 inside, compose maps 5623:8080).
+**Released in v0.2.2 (2026-10-14):** admin key (scope §17 "Users and server control": plain users; `sudo getaload admin` code traded for a key in Settings, Server control; old owner sign-ins become plain on start) and port 5623 for new installs (installer port check; CLI follows the local config; Docker keeps 8080 inside in v0.2.2; on main: the image listens on 5623 too).
 
-**On main, not released yet:** nothing.
+**On main, not released yet:** the Docker image listens on 5623 (one port number everywhere; owner decision). Next release: v0.2.3 (server only).
 
 **Next action, in order:**
 0. **Owner checks in real Chrome or Firefox** (the test pane drops clicks, the first typed text after focusing a field, and blocks clipboard reads): double-clicking a folder opens it once; the PIN keeps every digit when typed right after clicking the field; Paste link fills the field.
@@ -130,3 +130,4 @@
 - 2026-10-14: released app v0.2.1 and server v0.2.1 (release, update-e2e and image jobs green).
 - 2026-10-14: admin key built (server + app), tested; release v0.2.2 waits for the owner.
 - 2026-10-14: released app v0.2.2 and server v0.2.2 (admin key, port 5623; release, update-e2e and image jobs green).
+- 2026-10-15: Docker image on 5623 too (owner decision: 5623 everywhere for new installs; existing servers keep their port).

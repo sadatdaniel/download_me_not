@@ -9,7 +9,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "5623:8080"          # HTTPS, self-signed (the app shows the fingerprint once); 8080 inside the container
+      - "5623:5623"          # HTTPS, self-signed (the app shows the fingerprint once)
       - "42069:42069"        # torrents
       - "42069:42069/udp"
     volumes:

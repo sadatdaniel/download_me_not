@@ -36,7 +36,7 @@ Options (or the matching `GETALOAD_*` environment variables):
 | `--access lan` | lan | HTTPS with a self-signed certificate on port 5623 (pinned by fingerprint) |
 | `--access domain --domain dl.example.com` | | Automatic Let's Encrypt certificate on port 443 |
 | `--access proxy` | | Plain HTTP on 127.0.0.1:5623 for a reverse proxy, Cloudflare Tunnel or Tailscale |
-| `--port N` | 5623 | Port for `lan` and `proxy`. 5623 is "LOAD" on a phone keypad; if another program already uses it, the installer says which one and takes the next free port (a port you chose with `--port` stops the install instead). Servers installed before v0.2.2 keep their port (usually 8080) |
+| `--port N` | 5623 | Port for `lan` and `proxy`. 5623 is "LOAD" on a phone keypad; if another program already uses it, the installer says which one and takes the next free port (a port you chose with `--port` stops the install instead). Servers installed before v0.2.2 keep their port (usually 8080). The Docker image listens on 5623 from v0.2.3 (before: 8080; change the mapping to `5623:5623`) |
 | `--downloads-dir DIR` | /srv/getaload/downloads | Where downloads go |
 | `--data-dir DIR` | /var/lib/getaload | Database, tools, certificates |
 | `--version vX.Y.Z` | latest | A specific release |

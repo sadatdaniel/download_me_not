@@ -22,9 +22,9 @@ COPY --from=build /getaload /usr/local/bin/getaload
 RUN for t in yt-dlp rclone deno; do getaload tools install --data /opt/getaload-seed "$t" || echo "skip $t on $(uname -m)"; done
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 USER getaload
-ENV GETALOAD_IMAGE=1 GETALOAD_CONFIG=/config/config.yaml GETALOAD_PATHS_DATA=/data GETALOAD_PATHS_DOWNLOADS=/downloads GETALOAD_SERVER_LISTEN=0.0.0.0:8080
+ENV GETALOAD_IMAGE=1 GETALOAD_CONFIG=/config/config.yaml GETALOAD_PATHS_DATA=/data GETALOAD_PATHS_DOWNLOADS=/downloads GETALOAD_SERVER_LISTEN=0.0.0.0:5623
 VOLUME ["/config", "/data", "/downloads"]
-EXPOSE 8080 42069 42069/udp
+EXPOSE 5623 42069 42069/udp
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["getaload", "health"]
 ENTRYPOINT ["sh", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["serve"]

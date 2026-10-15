@@ -109,7 +109,7 @@ The [full guide](docs/deploy.md) covers Docker, your own domain, and more.
 
 ## Good to know
 
-- **Updates** come by themselves: the server checks daily, and the owner updates it with one tap in the app.
+- **Updates** come by themselves: the server checks daily, and a device with server control updates it with one tap in the app.
 - **Remove it** any time with `sudo getaload uninstall`. Your downloads are never deleted unless you ask.
 - **Your responsibility.** GetALoad downloads what you ask it to. Only download what you have the right to, and check
   your hosting provider's rules, especially for torrents.
