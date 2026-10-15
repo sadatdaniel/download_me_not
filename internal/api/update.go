@@ -18,21 +18,27 @@ type Updates struct {
 
 	mu   sync.Mutex
 	last update.Check
+	at   time.Time // when last was asked
 }
 
 func (u *Updates) Check(ctx context.Context) (update.Check, error) {
 	c, err := u.Updater.Check(ctx, u.Version)
 	if err == nil {
 		u.mu.Lock()
-		u.last = c
+		u.last, u.at = c, time.Now()
 		u.mu.Unlock()
 	}
 	return c, err
 }
 
+// Last is the answer of the last check while it is fresh (an hour), else empty: a release published after the
+// daily check must show up when someone looks.
 func (u *Updates) Last() update.Check {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	if time.Since(u.at) > time.Hour {
+		return update.Check{}
+	}
 	return u.last
 }
 
