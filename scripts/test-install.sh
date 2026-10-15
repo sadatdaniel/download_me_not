@@ -40,7 +40,7 @@ grep -q "Token" out.txt || fail "no command-line token printed"
 grep -q "added Alice" out.txt || fail "first user not added"
 grep -q "Admin code:" out.txt || fail "no admin code printed"
 for t in yt-dlp deno rclone; do grep -q "installing $t" out.txt || fail "$t not installed up front"; done
-grep "installing \|not installed now" out.txt || true # offline the downloads fail, which must not stop the install
+grep -B3 "installing |not installed now" out.txt || true # offline the downloads fail, which must not stop the install\|not installed now" out.txt || true # offline the downloads fail, which must not stop the install
 ok "fresh install"
 
 # Re-run: upgrade/repair keeps the config (and its tokens).
