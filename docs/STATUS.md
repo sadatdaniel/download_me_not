@@ -133,3 +133,4 @@
 - 2026-10-15: Docker image on 5623 too (owner decision: 5623 everywhere for new installs; existing servers keep their port).
 - 2026-10-15: owner's phone: old debug-signed 0.1.0 uninstalled (owner approved; no phone downloads), release-signed app v0.2.2 installed over adb; self-update works from here on.
 - 2026-10-15: Dependabot PRs merged in both repos (two CI failures were flaky tests: TestEngine and selftest TestRun on runners; rerun green); tool safety (work checks, major guard); settings topics; update check fix.
+- 2026-10-15: browser Back checked on the web app: it closes one page (the earlier 'reload' came from the test tool's history after several page loads in one tab), nothing to fix. Releasing app v0.2.3 and server v0.2.3.
