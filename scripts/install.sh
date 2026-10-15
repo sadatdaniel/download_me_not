@@ -260,6 +260,15 @@ else
 	say "existing config kept (upgrade or repair)"
 fi
 
+# Every helper tool now (checksum-verified, tested before use), so nobody waits for one later: yt-dlp (video
+# sites), deno (yt-dlp needs it for some sites), rclone (Google Drive). The server keeps them updated daily.
+# A tool without a build for this machine (deno on armv7) is skipped; its feature says so in the app.
+for tool in yt-dlp deno rclone; do
+	say "installing $tool"
+	as_svc /usr/local/bin/getaload tools install --data "$DATA_DIR" "$tool" >/dev/null ||
+		say "warning: $tool not installed now (see above); the server tries again when it starts"
+done
+
 # The first user. Questions go to /dev/tty: with `curl | sudo sh`, stdin is the script.
 # A subshell: in POSIX sh a failed redirection on a special builtin would end the whole script.
 has_tty() { [ "$YES" -eq 0 ] && (: </dev/tty) 2>/dev/null; }

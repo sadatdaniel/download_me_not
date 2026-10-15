@@ -228,7 +228,7 @@ func serveCmd() *cobra.Command {
 			Destination: destinations(cfg, reg, box, od, db),
 		})
 		if cfg.Updates.Tools != "off" {
-			go maintainTools(ctx, inst, reg)
+			go maintainTools(ctx, inst)
 		}
 		jobsDone := make(chan error, 1)
 		go func() { jobsDone <- jm.Run(ctx) }()
@@ -1428,10 +1428,11 @@ func providerConfigCmd() *cobra.Command {
 	return c
 }
 
-// maintainTools installs helper tools that enabled providers need and updates managed copies once a
-// day (checksum-verified, self-tested, previous copy kept). Failures are logged and retried next day.
-func maintainTools(ctx context.Context, inst *tools.Installer, reg *provider.Registry) {
-	need := map[string][]string{"video": {"yt-dlp", "deno"}, "gdrive": {"rclone"}}
+// maintainTools installs every helper tool this machine lacks (whether or not its feature is on yet: nobody
+// should wait for one later) and updates managed copies once a day (checksum-verified, tested before use,
+// previous copy kept). Failures are logged and retried the next day. A tool the system already has stays the
+// system's.
+func maintainTools(ctx context.Context, inst *tools.Installer) {
 	t := time.NewTimer(time.Minute) // let the server settle first
 	defer t.Stop()
 	for {
@@ -1440,21 +1441,20 @@ func maintainTools(ctx context.Context, inst *tools.Installer, reg *provider.Reg
 			return
 		case <-t.C:
 		}
-		for prov, names := range need {
-			for _, name := range names {
-				_, found := tools.Find(name, inst.DataDir)
-				managed := inst.Installed(name) != ""
-				if managed || (!found && reg.Enabled(prov)) {
-					get := inst.Install // a first install takes the latest; updates stay within the major version
-					if managed {
-						get = inst.Update
-					}
-					if tag, err := get(ctx, name); err != nil {
-						fmt.Fprintf(os.Stderr, "tools: %s: %v\n", name, err)
-					} else if !managed {
-						fmt.Fprintf(os.Stderr, "tools: installed %s %s\n", name, tag)
-					}
-				}
+		for _, name := range []string{"yt-dlp", "deno", "rclone"} {
+			_, found := tools.Find(name, inst.DataDir)
+			managed := inst.Installed(name) != ""
+			if !managed && found {
+				continue // the system's own copy
+			}
+			get := inst.Install // a first install takes the latest; updates stay within the major version
+			if managed {
+				get = inst.Update
+			}
+			if tag, err := get(ctx, name); err != nil {
+				fmt.Fprintf(os.Stderr, "tools: %s: %v\n", name, err)
+			} else if !managed {
+				fmt.Fprintf(os.Stderr, "tools: installed %s %s\n", name, tag)
 			}
 		}
 		t.Reset(24 * time.Hour)

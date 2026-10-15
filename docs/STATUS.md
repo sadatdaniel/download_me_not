@@ -10,6 +10,8 @@
 
 **On main, not released yet:** server: Docker image on 5623; update check reuses the daily answer for an hour at most; helper-tool updates must pass a real offline job before they replace the working copy, and daily updates of rclone and deno stay within their major version; all Dependabot updates merged (release-only ones, Docker and GoReleaser actions, get proven by the next release). App: Settings as a list of topics with their own pages ("Your devices", "Server control", ...), one-tap server update, Dependabot updates (test build green). Next: app v0.2.3 + server v0.2.3.
 
+**On main after v0.2.3:** the installer installs every helper tool (yt-dlp, deno, rclone) up front, and the daily check installs any that are missing whether or not their feature is on (owner request: nobody should have to sign in for tools to arrive). Tools the system already has stay the system's.
+
 **Next action, in order:**
 0. **Owner checks in real Chrome or Firefox** (the test pane drops clicks, the first typed text after focusing a field, and blocks clipboard reads): double-clicking a folder opens it once; the PIN keeps every digit when typed right after clicking the field; Paste link fills the field.
 1. **Owner updates to v0.2.2**, then runs `sudo getaload admin` once and enters the code in the app (Settings, Server control): the update turns the owner's sign-in into a plain one. The owner's server keeps port 8080.
@@ -134,3 +136,4 @@
 - 2026-10-15: owner's phone: old debug-signed 0.1.0 uninstalled (owner approved; no phone downloads), release-signed app v0.2.2 installed over adb; self-update works from here on.
 - 2026-10-15: Dependabot PRs merged in both repos (two CI failures were flaky tests: TestEngine and selftest TestRun on runners; rerun green); tool safety (work checks, major guard); settings topics; update check fix.
 - 2026-10-15: browser Back checked on the web app: it closes one page (the earlier 'reload' came from the test tool's history after several page loads in one tab), nothing to fix. Releasing app v0.2.3 and server v0.2.3.
+- 2026-10-15: installer and daily check install all helper tools up front (owner request).
