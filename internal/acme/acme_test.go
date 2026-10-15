@@ -8,13 +8,21 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
 func TestSetup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tc, h, err := Setup(ctx, Options{Domain: "dl.example.com", StorageDir: t.TempDir(), CA: "https://127.0.0.1:1/directory"})
+	// Not t.TempDir: certmagic's background maintenance may still write here after the test, which made the
+	// strict TempDir cleanup fail now and then. Best-effort removal instead.
+	dir, err := os.MkdirTemp("", "acme-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	tc, h, err := Setup(ctx, Options{Domain: "dl.example.com", StorageDir: dir, CA: "https://127.0.0.1:1/directory"})
 	if err != nil {
 		t.Fatal(err)
 	}
