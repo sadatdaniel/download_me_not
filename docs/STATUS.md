@@ -131,3 +131,4 @@
 - 2026-10-14: admin key built (server + app), tested; release v0.2.2 waits for the owner.
 - 2026-10-14: released app v0.2.2 and server v0.2.2 (admin key, port 5623; release, update-e2e and image jobs green).
 - 2026-10-15: Docker image on 5623 too (owner decision: 5623 everywhere for new installs; existing servers keep their port).
+- 2026-10-15: owner's phone: old debug-signed 0.1.0 uninstalled (owner approved; no phone downloads), release-signed app v0.2.2 installed over adb; self-update works from here on.
