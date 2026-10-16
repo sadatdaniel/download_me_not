@@ -28,7 +28,9 @@ docker compose -f compose.dev.yaml run --rm go go mod tidy       # online: modul
 docker compose -f compose.dev.yaml run --rm test go vet ./...
 ```
 
-- Compose project `dmn-dev`, volumes `dmn-gomod` and `dmn-gocache`.
+- Compose project `dmn-dev`, volumes `dmn-gomod` and `dmn-gocache`. If `docker compose ... run` hangs on a "volume
+  doesn't match, recreate?" prompt (no terminal), never recreate: run the same with plain docker, e.g.
+  `MSYS_NO_PATHCONV=1 docker run --rm --network none -v "$(pwd -W):/src" -v dmn-dev_dmn-gomod:/go/pkg/mod -v dmn-dev_dmn-gocache:/root/.cache/go-build -w /src dmn-dev:latest go test -p 2 ./cmd/... ./internal/...`
 - Docker resources this project created (the only ones you may remove): volumes `dmn-dev_dmn-gomod` and `dmn-dev_dmn-gocache` (compose adds the project prefix); images `golang:1.26`, `alpine:3.22`, `goreleaser/goreleaser:latest` and `getaload:local`, plus `ghcr.io/letsencrypt/pebble`, `ghcr.io/letsencrypt/pebble-challtestsrv` (ACME test), `dmn-sim:amd64` and `dmn-sim:arm64` (install simulation), volume `dmn-preview-config` (the app-web preview keeps its config and token across restarts) and `dmn-dev:latest` (Dockerfile.dev: Go, ffmpeg, aria2c, yt-dlp; rebuild with `docker compose -f compose.dev.yaml build go`). `ubuntu:24.04` existed before; use it but never remove it.
 - Server image: `docker build -t getaload:local .`, then see `compose.yaml`. The API contract is `api/openapi.json`; regenerate it with `UPDATE_OPENAPI=1` (see `internal/api`).
 - Don't call `python` on the host (it's a Store stub that hangs). Use Docker or perl.
